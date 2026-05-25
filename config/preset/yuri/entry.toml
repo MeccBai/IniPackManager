@@ -1,0 +1,10 @@
+[Entry]
+rules="rulesmd.ini"
+art="artmd.ini"
+sound="sound.ini"
+theme="theme.ini"
+ai="ai.ini"
+
+[Info]
+name="Yuri's Revenge"
+id="yr"

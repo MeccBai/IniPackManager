@@ -1,0 +1,14 @@
+[Entry]
+rules="rulesmo.ini"
+art="artmo.ini"
+sound="soundmo.ini"
+ui="uimd.ini"
+theme="thememo.ini"
+ai="aimo.ini"
+
+[Info]
+name="Mental Omega"
+id="mo"
+
+[Extra]
+Phobos="Phobos.dll"

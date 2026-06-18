@@ -1,0 +1,11 @@
+{
+  "version": "0.1.1",
+  "notes": "Bug fixes and updater wiring.",
+  "pub_date": "2026-06-08T12:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "REPLACE_WITH_CONTENTS_OF_.sig_FILE",
+      "url": "https://github.com/MeccBai/IniPackManager/releases/download/v0.1.1/ini_pack_manager_0.1.1_x64-setup.nsis.zip"
+    }
+  }
+}

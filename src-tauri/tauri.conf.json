@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -31,5 +32,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCN0NBM0QzQ0U2NzdDMTkKUldRWmZHZk8wNk44cTVTbjZzU0k3a2g5NUJCa3UzK2JRSFQ4TFp5dWx2ZjBJRkd3Y0lxZjYvRGUK",
+      "endpoints": [
+        "https://github.com/MeccBai/IniPackManager/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

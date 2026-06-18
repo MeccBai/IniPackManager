@@ -40,6 +40,10 @@ fn component_state_store_path() -> Result<PathBuf, String> {
     Ok(user_home_dir()?.join(USER_COMPONENT_STATE_RELATIVE_PATH))
 }
 
+fn app_settings_store_path() -> Result<PathBuf, String> {
+    Ok(user_home_dir()?.join(USER_APP_SETTINGS_RELATIVE_PATH))
+}
+
 fn project_root_dir() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|err| format!("无法获取项目目录: {err}"))
 }
@@ -156,6 +160,26 @@ fn save_component_state_store(path: &Path, store: &ComponentStateStore) -> Resul
     fs::write(path, raw).map_err(|err| format!("写入组件状态失败 {}: {err}", path.display()))
 }
 
+fn load_app_settings(path: &Path) -> Result<AppSettings, String> {
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("读取全局设置失败 {}: {err}", path.display()))?;
+    if raw.trim().is_empty() {
+        return Ok(AppSettings::default());
+    }
+    serde_json::from_str(&raw)
+        .map_err(|err| format!("解析全局设置失败 {}: {err}", path.display()))
+}
+
+fn save_app_settings(path: &Path, settings: &AppSettings) -> Result<(), String> {
+    ensure_parent_dir(path)?;
+    let raw = serde_json::to_string_pretty(settings)
+        .map_err(|err| format!("序列化全局设置失败: {err}"))?;
+    fs::write(path, raw).map_err(|err| format!("写入全局设置失败 {}: {err}", path.display()))
+}
+
 fn simplify_for_display(path: PathBuf) -> String {
     let raw = path.to_string_lossy().to_string();
 
@@ -212,5 +236,4 @@ fn normalize_record_name(record: &mut InstanceRecord) {
         record.name = fallback_name_from_path(&record.path);
     }
 }
-
 

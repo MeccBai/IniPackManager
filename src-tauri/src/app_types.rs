@@ -1,6 +1,7 @@
 const LEGACY_INSTANCE_STORE_RELATIVE_PATH: &str = "config/data/instances.json";
 const USER_INSTANCE_STORE_RELATIVE_PATH: &str = "IniPackManager/config/data/instances.json";
 const USER_COMPONENT_STATE_RELATIVE_PATH: &str = "IniPackManager/config/data/components.json";
+const USER_APP_SETTINGS_RELATIVE_PATH: &str = "IniPackManager/config/data/settings.json";
 const USER_COMPONENTS_RELATIVE_PATH: &str = "IniPackManager/components";
 const USER_REPOSITORY_RELATIVE_PATH: &str = "IniPackManager/repository";
 const PROJECT_PRESETS_RELATIVE_PATH: &str = "config/preset";
@@ -49,16 +50,17 @@ struct RawPackConfig {
 
 #[derive(Debug, Deserialize)]
 struct RawPackMeta {
+    #[serde(rename = "Name", alias = "name")]
     name: String,
-    #[serde(default)]
+    #[serde(rename = "Desc", alias = "desc", default)]
     desc: String,
-    #[serde(default)]
+    #[serde(rename = "Dir", alias = "dir", default)]
     dir: String,
-    #[serde(default)]
+    #[serde(rename = "Id", alias = "id", default)]
     id: String,
-    #[serde(default)]
+    #[serde(rename = "Game", alias = "game", default)]
     game: String,
-    #[serde(default)]
+    #[serde(rename = "Version", alias = "version", default)]
     version: i64,
 }
 
@@ -78,21 +80,28 @@ struct RawPackData {
 
 #[derive(Debug, Deserialize, Default)]
 struct RawPackRequirements {
-    #[serde(rename = "Files", default)]
+    #[serde(rename = "Files", alias = "files", default)]
     files: Vec<String>,
-    #[serde(rename = "Pack", default)]
+    #[serde(rename = "Pack", alias = "pack", default)]
     pack: Vec<String>,
+    #[serde(rename = "MinVersion", alias = "min_version", default)]
+    min_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct RawPackDataItem {
-    #[serde(default)]
+    #[serde(rename = "Name", alias = "name", default)]
     name: String,
-    #[serde(default)]
+    #[serde(rename = "File", alias = "file", default)]
     file: String,
-    #[serde(rename = "Options", default)]
+    #[serde(rename = "Options", alias = "options", default)]
     options: Vec<String>,
-    #[serde(rename = "need_include", default = "default_need_include")]
+    #[serde(
+        rename = "NeedInclude",
+        alias = "need_include",
+        alias = "needInclude",
+        default = "default_need_include"
+    )]
     need_include: bool,
 }
 
@@ -119,30 +128,83 @@ where
     Err(serde::de::Error::custom("需要整数或单元素整数数组"))
 }
 
+fn deserialize_string_list_or_single<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<toml::Value>::deserialize(deserializer)?;
+    let Some(value) = raw else {
+        return Ok(Vec::new());
+    };
+    if let Some(text) = value.as_str() {
+        return Ok(vec![text.to_string()]);
+    }
+    if let Some(array) = value.as_array() {
+        return Ok(array
+            .iter()
+            .filter_map(|item| item.as_str().map(|text| text.to_string()))
+            .collect());
+    }
+    Err(serde::de::Error::custom("需要字符串或字符串数组"))
+}
+
 #[derive(Debug, Deserialize)]
 struct RawPackOption {
+    #[serde(rename = "Name", alias = "name")]
     name: String,
-    #[serde(default)]
+    #[serde(rename = "Desc", alias = "desc", default)]
     desc: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "Type", alias = "type")]
     option_type: String,
-    #[serde(default, rename = "placeholders")]
+    #[serde(
+        rename = "Placeholders",
+        alias = "placeholders",
+        alias = "Placeholder",
+        alias = "placeholder",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
     placeholders: Vec<String>,
-    #[serde(default)]
+    #[serde(rename = "TrueResult", alias = "true_result", default)]
     true_result: Option<String>,
-    #[serde(default)]
+    #[serde(rename = "FalseResult", alias = "false_result", default)]
     false_result: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_i64_or_single_item_array")]
+    #[serde(
+        rename = "Min",
+        alias = "min",
+        default,
+        deserialize_with = "deserialize_i64_or_single_item_array"
+    )]
     min: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_i64_or_single_item_array")]
+    #[serde(
+        rename = "Max",
+        alias = "max",
+        default,
+        deserialize_with = "deserialize_i64_or_single_item_array"
+    )]
     max: Option<i64>,
-    #[serde(rename = "valueOutputs", default)]
+    #[serde(
+        rename = "ValueOutputs",
+        alias = "valueOutputs",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
     value_outputs: Vec<String>,
-    #[serde(default, rename = "values")]
+    #[serde(
+        rename = "Values",
+        alias = "values",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
     values: Vec<String>,
-    #[serde(default)]
+    #[serde(
+        rename = "Results",
+        alias = "results",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
     results: Vec<String>,
-    #[serde(default)]
+    #[serde(rename = "Default", alias = "default", default)]
     default: Option<toml::Value>,
 }
 
@@ -162,6 +224,7 @@ struct PackDefinition {
 struct PackRequirementDefinition {
     files: Vec<String>,
     pack: Vec<String>,
+    min_version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,6 +273,12 @@ struct ComponentStateStore {
     by_instance: HashMap<String, Vec<ComponentState>>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct AppSettings {
+    #[serde(default)]
+    registry_url: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct SaveComponentStateInput {
     instance_path: String,
@@ -251,4 +320,88 @@ struct AddInstanceConflictCheck {
     overwrite_files: Vec<String>,
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct RemoteRegistryIndex {
+    #[serde(rename = "SchemaVersion", alias = "schema_version", default)]
+    _schema_version: i64,
+    #[serde(rename = "PackLists", alias = "PackList", default)]
+    pack_lists: Vec<RemoteRegistryPackList>,
+}
 
+#[derive(Debug, Deserialize)]
+struct RemoteRegistryPackList {
+    #[serde(rename = "Game", alias = "game")]
+    game: String,
+    #[serde(
+        rename = "Index",
+        alias = "index",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
+    index: Vec<String>,
+    #[serde(rename = "Name", alias = "name", default)]
+    name: String,
+    #[serde(rename = "Desc", alias = "desc", default)]
+    desc: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct RemotePackageListFile {
+    #[serde(rename = "SchemaVersion", alias = "schema_version", default)]
+    _schema_version: i64,
+    #[serde(rename = "Packages", alias = "Package", default)]
+    packages: Vec<RemotePackageEntry>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct RemotePackageEntry {
+    #[serde(rename = "Id", alias = "id", default)]
+    id: String,
+    #[serde(rename = "Name", alias = "name")]
+    name: String,
+    #[serde(rename = "Author", alias = "author", default)]
+    author: String,
+    #[serde(rename = "Desc", alias = "desc", default)]
+    desc: String,
+    #[serde(rename = "Version", alias = "version", default)]
+    version: i64,
+    #[serde(rename = "Url", alias = "url")]
+    url: String,
+    #[serde(rename = "Sha256", alias = "sha256", default)]
+    sha256: String,
+    #[serde(rename = "MinVersion", alias = "min_version", default)]
+    min_version: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RemotePackageSummary {
+    id: String,
+    name: String,
+    author: String,
+    desc: String,
+    version: i64,
+    url: String,
+    sha256: String,
+    min_version: String,
+    incompatible_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RemotePackageCatalog {
+    game: String,
+    name: String,
+    desc: String,
+    packages: Vec<RemotePackageSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoadRemotePackagesInput {
+    registry_url: String,
+    game: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportRemotePackageInput {
+    url: String,
+    sha256: Option<String>,
+}

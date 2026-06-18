@@ -6,6 +6,8 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
+  Input,
+  Label,
   Switch,
   Text,
 } from "@fluentui/react-components";
@@ -15,11 +17,25 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   isDarkMode: boolean;
   setIsDarkMode: (checked: boolean) => void;
+  registryUrl: string;
+  setRegistryUrl: (value: string) => void;
+  saveRegistryUrl: () => Promise<void>;
+  savingRegistryUrl: boolean;
   styles: Record<string, string>;
 };
 
 export function GlobalSettingsDialog(props: Props) {
-  const { open, onOpenChange, isDarkMode, setIsDarkMode, styles } = props;
+  const {
+    open,
+    onOpenChange,
+    isDarkMode,
+    setIsDarkMode,
+    registryUrl,
+    setRegistryUrl,
+    saveRegistryUrl,
+    savingRegistryUrl,
+    styles,
+  } = props;
   return (
     <Dialog open={open} onOpenChange={(_, data) => onOpenChange(data.open)}>
       <DialogSurface className={styles.dialogSurface}>
@@ -34,6 +50,22 @@ export function GlobalSettingsDialog(props: Props) {
                   onChange={(_, data) => setIsDarkMode(data.checked)}
                   label={isDarkMode ? "深色模式" : "浅色模式"}
                 />
+              </div>
+              <div className={styles.optionCard}>
+                <Text weight="semibold">云端仓库</Text>
+                <div className={styles.fieldGroup}>
+                  <Label htmlFor="registry-url">索引地址</Label>
+                  <Input
+                    id="registry-url"
+                    value={registryUrl}
+                    onChange={(_, data) => setRegistryUrl(data.value)}
+                    placeholder="输入 index.toml 的公开 URL"
+                  />
+                  <Text className={styles.fieldHint}>推荐填写公开可访问的 `index.toml` 原始地址。</Text>
+                </div>
+                <Button appearance="secondary" onClick={() => void saveRegistryUrl()} disabled={savingRegistryUrl}>
+                  {savingRegistryUrl ? "保存中..." : "保存仓库地址"}
+                </Button>
               </div>
               <div className={styles.optionCard}>
                 <Text weight="semibold">About</Text>
@@ -56,4 +88,3 @@ export function GlobalSettingsDialog(props: Props) {
     </Dialog>
   );
 }
-

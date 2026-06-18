@@ -29,7 +29,10 @@ import "./App.css";
 import { useAppStyles } from "./useAppStyles";
 import { GlobalSettingsDialog } from "./components/dialogs/GlobalSettingsDialog";
 import { InstanceDetailDialog } from "./components/dialogs/InstanceDetailDialog";
+import { LocalComponentsPanel } from "./components/panels/LocalComponentsPanel";
+import { RemoteRepositoryPanel } from "./components/panels/RemoteRepositoryPanel";
 import type {
+  AppSettings,
   AddInstanceConflictCheck,
   ComponentSetting,
   ComponentState,
@@ -39,6 +42,8 @@ import type {
   PackDefinition,
   PackOptionDefinition,
   PresetSummary,
+  RemotePackageCatalog,
+  RemotePackageSummary,
 } from "./types";
 
 function App() {
@@ -58,14 +63,24 @@ function App() {
   const [overwriteSummary, setOverwriteSummary] = useState("");
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [registryUrl, setRegistryUrl] = useState("");
+  const [savingRegistryUrl, setSavingRegistryUrl] = useState(false);
+  const [activeCatalogTab, setActiveCatalogTab] = useState<"local" | "remote">("local");
+  const [remoteQuery, setRemoteQuery] = useState("");
+  const [remoteAuthorFilter, setRemoteAuthorFilter] = useState("");
 
   const [packLoading, setPackLoading] = useState(false);
   const [packApplying, setPackApplying] = useState(false);
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteImportingUrl, setRemoteImportingUrl] = useState<string | null>(null);
   const [packDetailOpen, setPackDetailOpen] = useState(false);
   const [packDefinition, setPackDefinition] = useState<PackDefinition | null>(null);
   const [components, setComponents] = useState<ComponentState[]>([]);
   const [activeComponentId, setActiveComponentId] = useState<string | null>(null);
   const [editingSettings, setEditingSettings] = useState<Record<string, boolean | number>>({});
+  const [remotePackages, setRemotePackages] = useState<RemotePackageSummary[]>([]);
+  const [remoteCatalogName, setRemoteCatalogName] = useState("");
+  const [remoteCatalogDesc, setRemoteCatalogDesc] = useState("");
 
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
@@ -115,6 +130,11 @@ function App() {
     }
   };
 
+  const loadAppSettings = async () => {
+    const settings = await invoke<AppSettings>("get_app_settings");
+    setRegistryUrl(settings.registry_url ?? "");
+  };
+
   const loadComponents = async (instancePath: string) => {
     const data = await invoke<ComponentState[]>("list_instance_components", { instancePath });
     setComponents(data);
@@ -128,7 +148,7 @@ function App() {
   useEffect(() => {
     const init = async () => {
       try {
-        await Promise.all([loadInstances(), loadPresets()]);
+        await Promise.all([loadInstances(), loadPresets(), loadAppSettings()]);
       } catch (error) {
         setStatus(`初始化失败: ${String(error)}`);
       } finally {
@@ -143,6 +163,9 @@ function App() {
     if (!selectedPath) {
       setComponents([]);
       setActiveComponentId(null);
+      setRemotePackages([]);
+      setRemoteCatalogName("");
+      setRemoteCatalogDesc("");
       return;
     }
     void loadComponents(selectedPath);
@@ -299,6 +322,32 @@ function App() {
     return `${instanceName} - ${componentName}`;
   }, [selectedInstance, activeComponent]);
 
+  const remoteAuthors = useMemo(
+    () => [...new Set(remotePackages.map((item) => item.author.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [remotePackages],
+  );
+
+  const filteredRemotePackages = useMemo(() => {
+    const query = remoteQuery.trim().toLowerCase();
+    return remotePackages.filter((item) => {
+      if (remoteAuthorFilter && item.author !== remoteAuthorFilter) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      const haystack = [item.name, item.desc, item.author].join("\n").toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [remoteAuthorFilter, remotePackages, remoteQuery]);
+
+  useEffect(() => {
+    if (activeCatalogTab !== "remote" || !selectedInstance) {
+      return;
+    }
+    void refreshRemotePackages();
+  }, [activeCatalogTab, registryUrl, selectedInstance]);
+
   const importPack = async () => {
     if (!selectedInstance) {
       openError("请先在左侧选中一个实例");
@@ -314,58 +363,147 @@ function App() {
         setPackLoading(false);
         return;
       }
-
-      const defaults: Record<string, boolean | number> = {};
-      const settings: ComponentSetting[] = [];
-      for (const option of definition.options) {
-        let value: boolean | number = 0;
-        if (option.option_type === "bool") {
-          value = option.default_bool ?? false;
-        } else if (option.option_type === "int") {
-          value = option.default_int ?? option.min ?? 0;
-        } else if (option.option_type === "enum") {
-          value = option.default_enum_index ?? 0;
-        }
-        defaults[option.name] = value;
-        settings.push({ name: option.name, value });
-      }
-
-      const existed = components.some(
-        (item) =>
-          item.config_id &&
-          definition.config_id &&
-          item.config_id.toLowerCase() === definition.config_id.toLowerCase(),
-      );
-      const component: ComponentState = {
-        id: "",
-        name: definition.name,
-        desc: definition.desc,
-        config_id: definition.config_id || "",
-        version: definition.version ?? 0,
-        pack_path: definition.pack_path,
-        enabled: false,
-        settings,
-      };
-
-      const result = await invoke<ComponentStateMutationResult>("save_instance_component_state", {
-        input: {
-          instance_path: selectedInstance.path,
-          component,
-          apply: false,
-        },
-      });
-      setComponents(result.components);
-      const created = result.components[result.components.length - 1] ?? null;
-      if (created) {
-        setActiveComponentId(created.id);
-      }
-      setPackDefinition(definition);
-      setEditingSettings(defaults);
-      setStatus(`${existed ? "已更新" : "已导入"}组件: ${definition.name} v${definition.version ?? 0}`);
+      await registerImportedPack(definition);
     } catch (error) {
       openError(String(error));
     } finally {
       setPackLoading(false);
+    }
+  };
+
+  const buildDefaultSettings = (definition: PackDefinition) => {
+    const defaults: Record<string, boolean | number> = {};
+    const settings: ComponentSetting[] = [];
+    for (const option of definition.options) {
+      let value: boolean | number = 0;
+      if (option.option_type === "bool") {
+        value = option.default_bool ?? false;
+      } else if (option.option_type === "int") {
+        value = option.default_int ?? option.min ?? 0;
+      } else if (option.option_type === "enum") {
+        value = option.default_enum_index ?? 0;
+      }
+      defaults[option.name] = value;
+      settings.push({ name: option.name, value });
+    }
+    return { defaults, settings };
+  };
+
+  const registerImportedPack = async (definition: PackDefinition) => {
+    if (!selectedInstance) {
+      openError("请先在左侧选中一个实例");
+      return;
+    }
+
+    const { defaults, settings } = buildDefaultSettings(definition);
+    const existed = components.some(
+      (item) =>
+        item.config_id &&
+        definition.config_id &&
+        item.config_id.toLowerCase() === definition.config_id.toLowerCase(),
+    );
+    const component: ComponentState = {
+      id: "",
+      name: definition.name,
+      desc: definition.desc,
+      config_id: definition.config_id || "",
+      version: definition.version ?? 0,
+      pack_path: definition.pack_path,
+      enabled: false,
+      settings,
+    };
+
+    const result = await invoke<ComponentStateMutationResult>("save_instance_component_state", {
+      input: {
+        instance_path: selectedInstance.path,
+        component,
+        apply: false,
+      },
+    });
+    setComponents(result.components);
+    const created = result.components[result.components.length - 1] ?? null;
+    if (created) {
+      setActiveComponentId(created.id);
+    }
+    setPackDefinition(definition);
+    setEditingSettings(defaults);
+    setStatus(`${existed ? "已更新" : "已导入"}组件: ${definition.name} v${definition.version ?? 0}`);
+  };
+
+  const saveRegistrySettings = async () => {
+    setSavingRegistryUrl(true);
+    try {
+      const settings = await invoke<AppSettings>("save_app_settings_command", {
+        settings: { registry_url: registryUrl },
+      });
+      setRegistryUrl(settings.registry_url ?? "");
+      setStatus("云端仓库地址已保存");
+    } catch (error) {
+      openError(String(error));
+    } finally {
+      setSavingRegistryUrl(false);
+    }
+  };
+
+  const refreshRemotePackages = async () => {
+    if (!selectedInstance) {
+      openError("请先在左侧选中一个实例");
+      return;
+    }
+    setRemoteLoading(true);
+    try {
+      const data = await invoke<RemotePackageCatalog>("list_remote_packages", {
+        input: {
+          registry_url: registryUrl,
+          game: selectedInstance.preset_id,
+        },
+      });
+      setRemoteCatalogName(data.name ?? "");
+      setRemoteCatalogDesc(data.desc ?? "");
+      setRemotePackages(data.packages ?? []);
+    } catch (error) {
+      openError(String(error));
+    } finally {
+      setRemoteLoading(false);
+    }
+  };
+
+  const importRemotePackage = async (item: RemotePackageSummary) => {
+    setRemoteImportingUrl(item.url);
+    try {
+      const definition = await invoke<PackDefinition>("import_remote_package", {
+        input: {
+          url: item.url,
+          sha256: item.sha256 || null,
+        },
+      });
+      await registerImportedPack(definition);
+      setActiveCatalogTab("local");
+    } catch (error) {
+      openError(String(error));
+    } finally {
+      setRemoteImportingUrl(null);
+    }
+  };
+
+  const deleteComponent = async (component: ComponentState) => {
+    if (!selectedInstance) {
+      return;
+    }
+    try {
+      const result = await invoke<ComponentStateMutationResult>("delete_instance_component", {
+        input: {
+          instance_path: selectedInstance.path,
+          component_id: component.id,
+        },
+      });
+      setComponents(result.components);
+      if (activeComponentId === component.id) {
+        setActiveComponentId(result.components[0]?.id ?? null);
+      }
+      setStatus(result.message);
+    } catch (error) {
+      openError(String(error));
     }
   };
 
@@ -608,80 +746,75 @@ function App() {
           <div className={styles.mainTopBar}>
             <div className={styles.cardHead}>
               <BoxMultipleRegular />
-              <Text weight="semibold">组件列表</Text>
+              <Text weight="semibold">组件中心</Text>
             </div>
             <div className={styles.rightAligned}>
-              <Button
-                appearance="primary"
-                onClick={() => void importPack()}
-                disabled={packLoading}
-              >
-                {packLoading ? "导入中..." : "导入组件"}
-              </Button>
+              {activeCatalogTab === "local" ? (
+                <Button
+                  appearance="primary"
+                  onClick={() => void importPack()}
+                  disabled={packLoading}
+                >
+                  {packLoading ? "导入中..." : "导入组件"}
+                </Button>
+              ) : (
+                <Button
+                  appearance="secondary"
+                  onClick={() => void refreshRemotePackages()}
+                  disabled={remoteLoading || !selectedInstance}
+                >
+                  {remoteLoading ? "刷新中..." : "刷新仓库"}
+                </Button>
+              )}
             </div>
           </div>
 
           <div className={styles.componentPlaceholder}>
-            {components.length === 0 ? (
-              <div className={styles.optionCard}>
-                <Text className={styles.empty}>暂无组件</Text>
-              </div>
+            <div className={styles.tabBar}>
+              <Button
+                className={styles.tabButton}
+                appearance={activeCatalogTab === "local" ? "primary" : "secondary"}
+                onClick={() => setActiveCatalogTab("local")}
+              >
+                本地组件
+              </Button>
+              <Button
+                className={styles.tabButton}
+                appearance={activeCatalogTab === "remote" ? "primary" : "secondary"}
+                onClick={() => setActiveCatalogTab("remote")}
+                disabled={!selectedInstance}
+              >
+                云端仓库
+              </Button>
+            </div>
+
+            {activeCatalogTab === "local" ? (
+              <LocalComponentsPanel
+                components={components}
+                selectedInstancePath={selectedInstance?.path ?? null}
+                activeComponentId={activeComponentId}
+                onDelete={deleteComponent}
+                onOpenDetail={openComponentDetail}
+                onToggleEnabled={setComponentEnabled}
+                styles={styles}
+              />
             ) : (
-              <div className={styles.optionsList}>
-                {components.map((component) => (
-                  <div key={component.id} className={styles.optionCard}>
-                    <Text weight="semibold">{component.name}</Text>
-                    <Text className={styles.empty}>
-                      {(component.desc || "无描述") + ` · v${component.version ?? 0}`}
-                    </Text>
-                    <div className={styles.itemFooter}>
-                      <Switch
-                        checked={component.enabled}
-                        onChange={(_, data) => void setComponentEnabled(component, data.checked)}
-                        label={component.enabled ? "已启用" : "已禁用"}
-                      />
-                      <div className={styles.rightAligned}>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          onClick={async () => {
-                            if (!selectedInstance) {
-                              return;
-                            }
-                            try {
-                              const result = await invoke<ComponentStateMutationResult>(
-                                "delete_instance_component",
-                                {
-                                  input: {
-                                    instance_path: selectedInstance.path,
-                                    component_id: component.id,
-                                  },
-                                },
-                              );
-                              setComponents(result.components);
-                              if (activeComponentId === component.id) {
-                                setActiveComponentId(result.components[0]?.id ?? null);
-                              }
-                              setStatus(result.message);
-                            } catch (error) {
-                              openError(String(error));
-                            }
-                          }}
-                        >
-                          删除组件
-                        </Button>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          onClick={() => void openComponentDetail(component)}
-                        >
-                          详情设置
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <RemoteRepositoryPanel
+                game={selectedInstance?.preset_id ?? ""}
+                catalogName={remoteCatalogName}
+                catalogDesc={remoteCatalogDesc}
+                loading={remoteLoading}
+                query={remoteQuery}
+                authorFilter={remoteAuthorFilter}
+                authors={remoteAuthors}
+                packages={filteredRemotePackages}
+                importingUrl={remoteImportingUrl}
+                onQueryChange={setRemoteQuery}
+                onAuthorFilterChange={setRemoteAuthorFilter}
+                onRefresh={refreshRemotePackages}
+                onImport={importRemotePackage}
+                styles={styles}
+              />
             )}
           </div>
         </Card>
@@ -692,6 +825,10 @@ function App() {
         onOpenChange={setGlobalSettingsOpen}
         isDarkMode={isDarkMode}
         setIsDarkMode={setIsDarkMode}
+        registryUrl={registryUrl}
+        setRegistryUrl={setRegistryUrl}
+        saveRegistryUrl={saveRegistrySettings}
+        savingRegistryUrl={savingRegistryUrl}
         styles={styles}
       />
 

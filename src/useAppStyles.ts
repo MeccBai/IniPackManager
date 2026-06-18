@@ -151,6 +151,15 @@ export const useAppStyles = makeStyles({
     alignItems: "center",
     gap: "8px",
   },
+  tabBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  tabButton: {
+    minWidth: "120px",
+  },
   mainDesc: {
     color: tokens.colorNeutralForeground3,
   },
@@ -209,7 +218,7 @@ export const useAppStyles = makeStyles({
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "8px",
     borderRadius: tokens.borderRadiusMedium,
     border: "1px dashed var(--placeholder-border)",
     backgroundColor: "var(--placeholder-bg)",
@@ -225,6 +234,19 @@ export const useAppStyles = makeStyles({
     overflowY: "auto",
     ...shorthands.padding("4px"),
   },
+  panelBody: {
+    display: "grid",
+    gap: "8px",
+    minHeight: 0,
+    flex: 1,
+    alignContent: "start",
+  },
+  filterBar: {
+    display: "grid",
+    gridTemplateColumns: "minmax(220px, 1fr) minmax(160px, 220px) auto",
+    gap: "10px",
+    alignItems: "center",
+  },
   optionCard: {
     display: "grid",
     gap: "6px",
@@ -232,6 +254,15 @@ export const useAppStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     border: "1px solid var(--item-border)",
     backgroundColor: "var(--item-bg)",
+  },
+  compactInfoCard: {
+    gap: "4px",
+    ...shorthands.padding("12px"),
+    minHeight: "unset",
+  },
+  activeOptionCard: {
+    border: "1px solid var(--item-active-border)",
+    boxShadow: "var(--item-active-shadow)",
   },
   footerBar: {
     display: "flex",

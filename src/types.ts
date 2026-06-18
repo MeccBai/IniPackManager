@@ -45,6 +45,7 @@ export type PackDefinition = {
   requirements: {
     files: string[];
     pack: string[];
+    min_version?: string | null;
   };
   options: PackOptionDefinition[];
 };
@@ -68,6 +69,29 @@ export type ComponentState = {
 export type ComponentStateMutationResult = {
   components: ComponentState[];
   message: string;
+};
+
+export type AppSettings = {
+  registry_url: string;
+};
+
+export type RemotePackageSummary = {
+  id: string;
+  name: string;
+  author: string;
+  desc: string;
+  version: number;
+  url: string;
+  sha256: string;
+  min_version: string;
+  incompatible_reason: string | null;
+};
+
+export type RemotePackageCatalog = {
+  game: string;
+  name: string;
+  desc: string;
+  packages: RemotePackageSummary[];
 };
 
 

@@ -63,6 +63,11 @@ fn pack_output_base(instance_path: &Path, pack_meta: &RawPackMeta) -> PathBuf {
     path
 }
 
+fn pack_dir_placeholder(pack_meta: &RawPackMeta) -> String {
+    let output_dir = pack_output_base(Path::new(""), pack_meta);
+    output_dir.to_string_lossy().replace('\\', "/")
+}
+
 fn first_toml_array_item(value: &toml::Value) -> Option<&toml::Value> {
     if let Some(array) = value.as_array() {
         return array.first();

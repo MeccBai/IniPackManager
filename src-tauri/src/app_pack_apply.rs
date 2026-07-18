@@ -114,6 +114,63 @@ fn data_item_file_name(item: &RawPackDataItem) -> Result<String, String> {
     Ok(file)
 }
 
+fn resource_file_path(resource: &RawPackResource) -> Result<PathBuf, String> {
+    let file = resource.file.trim();
+    if file.is_empty() {
+        return Err("Resource 条目缺少 File 字段".to_string());
+    }
+    safe_relative_path(file).map_err(|_| format!("Resource 文件路径非法: {file}"))
+}
+
+fn copy_pack_resources(
+    instance_dir: &Path,
+    pack_dir: &Path,
+    output_base: &Path,
+    resources: &[RawPackResource],
+) -> Result<(), String> {
+    for resource in resources {
+        let relative_path = resource_file_path(resource)?;
+        let source = pack_dir.join(&relative_path);
+        if !source.is_file() {
+            return Err(format!("Resource 文件不存在: {}", source.display()));
+        }
+
+        let target_base = if resource.dir { output_base } else { instance_dir };
+        let target = target_base.join(relative_path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("无法创建资源目录 {}: {err}", parent.display()))?;
+        }
+        fs::copy(&source, &target).map_err(|err| {
+            format!("复制 Resource 文件失败 {} -> {}: {err}", source.display(), target.display())
+        })?;
+    }
+    Ok(())
+}
+
+fn remove_pack_resources(
+    instance_dir: &Path,
+    output_base: &Path,
+    resources: &[RawPackResource],
+) -> Result<(), String> {
+    for resource in resources {
+        let relative_path = resource_file_path(resource)?;
+        let target_base = if resource.dir { output_base } else { instance_dir };
+        let target = target_base.join(relative_path);
+        if target.exists() {
+            fs::remove_file(&target)
+                .map_err(|err| format!("删除 Resource 文件失败 {}: {err}", target.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_default_placeholders(content: String, pack_meta: &RawPackMeta) -> String {
+    content
+        .replace("{Dir}", &pack_dir_placeholder(pack_meta))
+        .replace("{Id}", pack_meta.id.trim())
+}
+
 fn collect_data_items(config: &RawPackConfig) -> [(&str, &Vec<RawPackDataItem>); 5] {
     [
         ("Rules", &config.data.rules),
@@ -144,6 +201,7 @@ fn apply_pack_internal(
     fs::create_dir_all(&output_base)
         .map_err(|err| format!("无法创建 Pack 输出目录 {}: {err}", output_base.display()))?;
     copy_dir_recursive(pack_dir, &output_base)?;
+    copy_pack_resources(instance_dir, pack_dir, &output_base, &pack_config.resources)?;
 
     let mut generated_rel_paths = Vec::new();
     for (group_name, items) in collect_data_items(&pack_config) {
@@ -167,6 +225,7 @@ fn apply_pack_internal(
             let mut content = fs::read_to_string(&output_file).map_err(|err| {
                 format!("读取已复制的数据文件失败 {}: {err}", output_file.display())
             })?;
+            content = apply_default_placeholders(content, &pack_config.config);
 
             for option_name in &item.options {
                 let option = option_map
@@ -242,6 +301,8 @@ fn disable_pack_internal(instance_dir: &Path, pack_dir: &Path) -> Result<(), Str
             }
         }
     }
+
+    remove_pack_resources(instance_dir, &output_base, &pack_config.resources)?;
 
     Ok(())
 }

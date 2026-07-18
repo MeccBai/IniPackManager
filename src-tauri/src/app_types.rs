@@ -43,9 +43,17 @@ struct RawPackConfig {
     #[serde(rename = "Data", default)]
     data: RawPackData,
     #[serde(rename = "Resource", default)]
-    _resource: Vec<String>,
+    resources: Vec<RawPackResource>,
     #[serde(rename = "Requirements", default)]
     requirements: RawPackRequirements,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawPackResource {
+    #[serde(rename = "File", alias = "file", alias = "Path", alias = "path")]
+    file: String,
+    #[serde(rename = "Dir", alias = "dir", default)]
+    dir: bool,
 }
 
 #[derive(Debug, Deserialize)]

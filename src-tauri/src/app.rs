@@ -36,6 +36,8 @@ pub fn run() {
             pick_instance_folder,
             pick_pack_folder,
             import_pack_zip,
+            export_instance_configuration,
+            import_instance_configuration,
             import_remote_package,
             list_remote_packages,
             load_pack_definition,

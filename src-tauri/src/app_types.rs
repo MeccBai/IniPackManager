@@ -2,8 +2,6 @@ const LEGACY_INSTANCE_STORE_RELATIVE_PATH: &str = "config/data/instances.json";
 const USER_INSTANCE_STORE_RELATIVE_PATH: &str = "IniPackManager/config/data/instances.json";
 const USER_COMPONENT_STATE_RELATIVE_PATH: &str = "IniPackManager/config/data/components.json";
 const USER_APP_SETTINGS_RELATIVE_PATH: &str = "IniPackManager/config/data/settings.json";
-const USER_COMPONENTS_RELATIVE_PATH: &str = "IniPackManager/components";
-const USER_REPOSITORY_RELATIVE_PATH: &str = "IniPackManager/repository";
 const PROJECT_PRESETS_RELATIVE_PATH: &str = "config/preset";
 const PACK_MAIN_FILES: [(&str, &str); 5] = [
     ("Rules", "RulesMain.ini"),
@@ -299,6 +297,24 @@ struct ComponentStateStore {
 struct AppSettings {
     #[serde(default)]
     registry_url: String,
+    #[serde(default)]
+    local_repository_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ConfigurationSnapshot {
+    schema_version: u32,
+    preset_id: String,
+    components: Vec<SnapshotComponent>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SnapshotComponent {
+    config_id: String,
+    name: String,
+    version: i64,
+    enabled: bool,
+    settings: Vec<ComponentSetting>,
 }
 
 #[derive(Debug, Deserialize)]

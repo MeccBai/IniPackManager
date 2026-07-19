@@ -73,6 +73,7 @@ export type ComponentStateMutationResult = {
 
 export type AppSettings = {
   registry_url: string;
+  local_repository_path: string;
 };
 
 export type RemotePackageSummary = {

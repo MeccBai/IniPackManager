@@ -12,6 +12,7 @@ fn load_effective_app_settings() -> Result<AppSettings, String> {
 fn save_effective_app_settings(settings: AppSettings) -> Result<AppSettings, String> {
     let mut next = settings;
     next.registry_url = next.registry_url.trim().to_string();
+    next.local_repository_path = next.local_repository_path.trim().to_string();
     if next.registry_url.is_empty() {
         next.registry_url = DEFAULT_REGISTRY_URL.to_string();
     }

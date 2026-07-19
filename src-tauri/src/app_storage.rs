@@ -28,12 +28,21 @@ fn user_home_dir() -> Result<PathBuf, String> {
     Ok(PathBuf::from(user_profile))
 }
 
+fn local_repository_base_dir() -> Result<PathBuf, String> {
+    let settings = load_app_settings(&app_settings_store_path()?)?;
+    let custom_path = settings.local_repository_path.trim();
+    if !custom_path.is_empty() {
+        return Ok(PathBuf::from(custom_path));
+    }
+    Ok(user_home_dir()?.join("IniPackManager"))
+}
+
 fn components_root_dir() -> Result<PathBuf, String> {
-    Ok(user_home_dir()?.join(USER_COMPONENTS_RELATIVE_PATH))
+    Ok(local_repository_base_dir()?.join("components"))
 }
 
 fn repository_root_dir() -> Result<PathBuf, String> {
-    Ok(user_home_dir()?.join(USER_REPOSITORY_RELATIVE_PATH))
+    Ok(local_repository_base_dir()?.join("repository"))
 }
 
 fn component_state_store_path() -> Result<PathBuf, String> {
@@ -236,4 +245,3 @@ fn normalize_record_name(record: &mut InstanceRecord) {
         record.name = fallback_name_from_path(&record.path);
     }
 }
-

@@ -64,6 +64,113 @@ fn import_pack_zip(app: tauri::AppHandle) -> Result<Option<PackDefinition>, Stri
     Ok(Some(import_pack_archive(&zip_path)?))
 }
 
+fn find_repository_pack(config_id: &str) -> Result<PathBuf, String> {
+    let repository = repository_root_dir()?;
+    for entry in fs::read_dir(&repository)
+        .map_err(|err| format!("读取本地仓库失败 {}: {err}", repository.display()))?
+    {
+        let path = entry.map_err(|err| format!("读取本地仓库目录项失败: {err}"))?.path();
+        if path.is_dir()
+            && parse_pack_config(&path)
+                .is_ok_and(|config| config.config.id.trim().eq_ignore_ascii_case(config_id))
+        {
+            return Ok(path);
+        }
+    }
+    Err(format!("本地仓库中未找到组件包: {config_id}"))
+}
+
+#[tauri::command]
+fn export_instance_configuration(instance_path: String) -> Result<String, String> {
+    let instance_dir = validate_instance_game_dir(Path::new(instance_path.trim()))?;
+    let preset_id = instance_preset_id_for_path(instance_path.trim())?;
+    let store = load_component_state_store(&component_state_store_path()?)?;
+    let components = store
+        .by_instance
+        .get(&instance_key(instance_path.trim()))
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|component| SnapshotComponent {
+            config_id: component.config_id,
+            name: component.name,
+            version: component.version,
+            enabled: component.enabled,
+            settings: component.settings,
+        })
+        .collect();
+    let snapshot = ConfigurationSnapshot {
+        schema_version: 1,
+        preset_id,
+        components,
+    };
+    let path = instance_dir.join("IniPackManager.config.json");
+    let raw = serde_json::to_string_pretty(&snapshot)
+        .map_err(|err| format!("序列化配置快照失败: {err}"))?;
+    fs::write(&path, raw).map_err(|err| format!("写入配置快照失败 {}: {err}", path.display()))?;
+    Ok(simplify_for_display(path))
+}
+
+#[tauri::command]
+fn import_instance_configuration(
+    app: tauri::AppHandle,
+    instance_path: String,
+) -> Result<Option<ComponentStateMutationResult>, String> {
+    let Some(selected) = app.dialog().file().add_filter("Configuration", &["json"]).blocking_pick_file() else {
+        return Ok(None);
+    };
+    let file = selected.into_path().map_err(|err| format!("无法读取配置文件路径: {err}"))?;
+    let raw = fs::read_to_string(&file).map_err(|err| format!("读取配置快照失败 {}: {err}", file.display()))?;
+    let snapshot: ConfigurationSnapshot = serde_json::from_str(&raw)
+        .map_err(|err| format!("解析配置快照失败 {}: {err}", file.display()))?;
+    if snapshot.schema_version != 1 {
+        return Err(format!("不支持的配置快照版本: {}", snapshot.schema_version));
+    }
+    let instance_dir = validate_instance_game_dir(Path::new(instance_path.trim()))?;
+    let preset_id = instance_preset_id_for_path(instance_path.trim())?;
+    if !snapshot.preset_id.eq_ignore_ascii_case(&preset_id) {
+        return Err(format!("Preset 不匹配：快照为 {}，当前实例为 {}", snapshot.preset_id, preset_id));
+    }
+    let mut components = Vec::new();
+    for saved in snapshot.components {
+        let pack_path = find_repository_pack(&saved.config_id)?;
+        let config = parse_pack_config(&pack_path)?;
+        components.push(ComponentState {
+            id: component_id(&simplify_for_display(pack_path.clone())),
+            name: config.config.name,
+            desc: config.config.desc,
+            config_id: config.config.id,
+            version: config.config.version,
+            pack_path: simplify_for_display(pack_path),
+            enabled: saved.enabled,
+            settings: saved.settings,
+        });
+    }
+    let store_path = component_state_store_path()?;
+    let mut store = load_component_state_store(&store_path)?;
+    let key = instance_key(instance_path.trim());
+    let previous = store.by_instance.get(&key).cloned().unwrap_or_default();
+    for component in previous.iter().filter(|component| component.enabled) {
+        disable_pack_internal(&instance_dir, Path::new(&component.pack_path))?;
+    }
+    for component in components.iter().filter(|component| component.enabled) {
+        let config = parse_pack_config(Path::new(&component.pack_path))?;
+        validate_pack_requirements(&instance_dir, &preset_id, &config, &components, Some(&component.id))?;
+        let selections: Vec<PackSelectionInput> = component
+            .settings
+            .iter()
+            .map(|item| PackSelectionInput {
+                name: item.name.clone(),
+                value: item.value.clone(),
+            })
+            .collect();
+        apply_pack_internal(&instance_dir, Path::new(&component.pack_path), &selections)?;
+    }
+    store.by_instance.insert(key, components.clone());
+    save_component_state_store(&store_path, &store)?;
+    Ok(Some(ComponentStateMutationResult { components, message: "配置快照已导入并应用".to_string() }))
+}
+
 #[tauri::command]
 fn list_instance_components(instance_path: String) -> Result<Vec<ComponentState>, String> {
     let key = instance_key(instance_path.trim());

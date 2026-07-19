@@ -64,6 +64,7 @@ function App() {
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [registryUrl, setRegistryUrl] = useState("");
+  const [localRepositoryPath, setLocalRepositoryPath] = useState("");
   const [savingRegistryUrl, setSavingRegistryUrl] = useState(false);
   const [activeCatalogTab, setActiveCatalogTab] = useState<"local" | "remote">("local");
   const [remoteQuery, setRemoteQuery] = useState("");
@@ -133,6 +134,7 @@ function App() {
   const loadAppSettings = async () => {
     const settings = await invoke<AppSettings>("get_app_settings");
     setRegistryUrl(settings.registry_url ?? "");
+    setLocalRepositoryPath(settings.local_repository_path ?? "");
   };
 
   const loadComponents = async (instancePath: string) => {
@@ -434,14 +436,48 @@ function App() {
     setSavingRegistryUrl(true);
     try {
       const settings = await invoke<AppSettings>("save_app_settings_command", {
-        settings: { registry_url: registryUrl },
+        settings: { registry_url: registryUrl, local_repository_path: localRepositoryPath },
       });
       setRegistryUrl(settings.registry_url ?? "");
-      setStatus("云端仓库地址已保存");
+      setLocalRepositoryPath(settings.local_repository_path ?? "");
+      setStatus("仓库设置已保存");
     } catch (error) {
       openError(String(error));
     } finally {
       setSavingRegistryUrl(false);
+    }
+  };
+
+  const pickLocalRepositoryPath = async () => {
+    try {
+      const path = await invoke<string | null>("pick_pack_folder");
+      if (path) setLocalRepositoryPath(path);
+    } catch (error) {
+      openError(`选择本地仓库失败: ${String(error)}`);
+    }
+  };
+
+  const exportConfiguration = async () => {
+    if (!selectedInstance) return;
+    try {
+      const path = await invoke<string>("export_instance_configuration", { instancePath: selectedInstance.path });
+      setStatus(`配置已导出: ${path}`);
+    } catch (error) {
+      openError(String(error));
+    }
+  };
+
+  const importConfiguration = async () => {
+    if (!selectedInstance || !window.confirm("导入会替换当前实例的组件配置并重新应用启用组件，是否继续？")) return;
+    try {
+      const result = await invoke<ComponentStateMutationResult | null>("import_instance_configuration", { instancePath: selectedInstance.path });
+      if (result) {
+        setComponents(result.components);
+        setActiveComponentId(result.components[0]?.id ?? null);
+        setStatus(result.message);
+      }
+    } catch (error) {
+      openError(String(error));
     }
   };
 
@@ -750,13 +786,7 @@ function App() {
             </div>
             <div className={styles.rightAligned}>
               {activeCatalogTab === "local" ? (
-                <Button
-                  appearance="primary"
-                  onClick={() => void importPack()}
-                  disabled={packLoading}
-                >
-                  {packLoading ? "导入中..." : "导入组件"}
-                </Button>
+                <Button appearance="primary" onClick={() => void importPack()} disabled={packLoading}>{packLoading ? "导入中..." : "导入组件"}</Button>
               ) : (
                 <Button
                   appearance="secondary"
@@ -827,8 +857,14 @@ function App() {
         setIsDarkMode={setIsDarkMode}
         registryUrl={registryUrl}
         setRegistryUrl={setRegistryUrl}
+        localRepositoryPath={localRepositoryPath}
+        setLocalRepositoryPath={setLocalRepositoryPath}
+        pickLocalRepositoryPath={pickLocalRepositoryPath}
         saveRegistryUrl={saveRegistrySettings}
         savingRegistryUrl={savingRegistryUrl}
+        canManageConfiguration={Boolean(selectedInstance)}
+        exportConfiguration={exportConfiguration}
+        importConfiguration={importConfiguration}
         styles={styles}
       />
 

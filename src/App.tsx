@@ -29,6 +29,7 @@ import "./App.css";
 import { useAppStyles } from "./useAppStyles";
 import { GlobalSettingsDialog } from "./components/dialogs/GlobalSettingsDialog";
 import { InstanceDetailDialog } from "./components/dialogs/InstanceDetailDialog";
+import { SettingsPageLayout } from "./components/dialogs/SettingsPageLayout";
 import { LocalComponentsPanel } from "./components/panels/LocalComponentsPanel";
 import { RemoteRepositoryPanel } from "./components/panels/RemoteRepositoryPanel";
 import type {
@@ -76,6 +77,7 @@ function App() {
   const [remoteImportingUrl, setRemoteImportingUrl] = useState<string | null>(null);
   const [packDetailOpen, setPackDetailOpen] = useState(false);
   const [packDefinition, setPackDefinition] = useState<PackDefinition | null>(null);
+  const [activeOptionTag, setActiveOptionTag] = useState("");
   const [components, setComponents] = useState<ComponentState[]>([]);
   const [activeComponentId, setActiveComponentId] = useState<string | null>(null);
   const [editingSettings, setEditingSettings] = useState<Record<string, boolean | number>>({});
@@ -332,6 +334,14 @@ function App() {
     const componentName = activeComponent?.name?.trim() || "未选择组件";
     return `${instanceName} - ${componentName}`;
   }, [selectedInstance, activeComponent]);
+  const activeOptionGroup = useMemo(() => {
+    if (!packDefinition) {
+      return null;
+    }
+    return packDefinition.option_groups.find((group) => group.tag === activeOptionTag)
+      ?? packDefinition.option_groups[0]
+      ?? null;
+  }, [activeOptionTag, packDefinition]);
 
   const remoteAuthors = useMemo(
     () => [...new Set(remotePackages.map((item) => item.author.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -438,6 +448,7 @@ function App() {
       setActiveComponentId(created.id);
     }
     setPackDefinition(definition);
+    setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
     setEditingSettings(defaults);
     setStatus(`${existed ? "已更新" : "已导入"}组件: ${definition.name} v${definition.version ?? 0}`);
   };
@@ -560,6 +571,7 @@ function App() {
       packPath: component.pack_path,
     });
     setPackDefinition(definition);
+    setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
 
     const currentValues: Record<string, boolean | number> = {};
     for (const option of definition.options) {
@@ -639,7 +651,7 @@ function App() {
     if (renderType === "bool") {
       return (
         <div key={option.name} className={styles.optionCard}>
-          <Text weight="semibold">{option.desc}</Text>
+          <Text weight="semibold">{option.ui_name || option.desc}</Text>
           <Switch
             checked={Boolean(value)}
             onChange={(_, data) =>
@@ -656,7 +668,7 @@ function App() {
       const useSlider = option.enum_items.length >= 5;
       return (
         <div key={option.name} className={styles.optionCard}>
-          <Text weight="semibold">{option.desc}</Text>
+          <Text weight="semibold">{option.ui_name || option.desc}</Text>
           {useSlider ? (
             <>
               <Slider
@@ -693,7 +705,7 @@ function App() {
     const intValue = Number(value ?? option.default_int ?? option.min ?? 0);
     return (
       <div key={option.name} className={styles.optionCard}>
-        <Text weight="semibold">{option.desc}</Text>
+      <Text weight="semibold">{option.ui_name || option.desc}</Text>
         <Input
           type="number"
           value={String(intValue)}
@@ -883,9 +895,6 @@ function App() {
         pickLocalRepositoryPath={pickLocalRepositoryPath}
         saveRegistryUrl={saveRegistrySettings}
         savingRegistryUrl={savingRegistryUrl}
-        canManageConfiguration={Boolean(selectedInstance)}
-        exportConfiguration={exportConfiguration}
-        importConfiguration={importConfiguration}
         styles={styles}
       />
 
@@ -975,20 +984,40 @@ function App() {
         pickPathForDetail={pickPathForDetail}
         deleteCurrentInstance={deleteCurrentInstance}
         saveDetail={saveDetail}
+        exportConfiguration={exportConfiguration}
+        importConfiguration={importConfiguration}
         deletingDetail={deletingDetail}
         savingDetail={savingDetail}
         styles={styles}
       />
 
       <Dialog open={packDetailOpen} onOpenChange={(_, data) => setPackDetailOpen(data.open)}>
-        <DialogSurface className={styles.dialogSurface}>
-          <DialogBody>
+        <DialogSurface className={styles.settingsDialogSurface}>
+          <DialogBody className={styles.settingsDialogBody}>
             <DialogTitle>组件详情设置</DialogTitle>
-            <DialogContent className={styles.dialogContent}>
+            <DialogContent className={styles.settingsDialogContent}>
               {!packDefinition ? (
                 <Text className={styles.empty}>当前没有可配置的组件。</Text>
               ) : (
-                <div className={styles.optionsList}>{packDefinition.options.map(renderPackOptionEditor)}</div>
+                <SettingsPageLayout
+                  activePage={activeOptionGroup?.tag ?? ""}
+                  pages={packDefinition.option_groups.map((group) => ({ id: group.tag, label: group.name }))}
+                  onPageChange={setActiveOptionTag}
+                  styles={styles}
+                >
+                    {activeOptionGroup && (
+                      <>
+                        <div className={styles.settingsPageHeader}>
+                          <Text className={styles.settingsEyebrow}>TAG · {activeOptionGroup.tag}</Text>
+                          <Text className={styles.settingsTitle}>{activeOptionGroup.name}</Text>
+                          {activeOptionGroup.desc && <Text className={styles.settingsLead}>{activeOptionGroup.desc}</Text>}
+                        </div>
+                        <div className={styles.optionsList}>
+                          {activeOptionGroup.options.map(renderPackOptionEditor)}
+                        </div>
+                      </>
+                    )}
+                </SettingsPageLayout>
               )}
             </DialogContent>
             <DialogActions>

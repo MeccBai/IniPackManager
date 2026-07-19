@@ -297,8 +297,8 @@ export const useAppStyles = makeStyles({
     backdropFilter: "blur(14px)",
   },
   settingsDialogSurface: {
-    width: "min(1080px, 94vw)",
-    height: "min(680px, 86vh)",
+    width: "min(1240px, 96vw)",
+    height: "min(760px, 90vh)",
     backgroundColor: "var(--panel-bg)",
     border: "1px solid var(--panel-border)",
     boxShadow: "var(--panel-shadow)",
@@ -319,8 +319,8 @@ export const useAppStyles = makeStyles({
     height: "100%",
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "180px minmax(0, 1fr)",
-    gap: "20px",
+    gridTemplateColumns: "148px minmax(0, 1fr)",
+    gap: "16px",
   },
   settingsNav: {
     display: "grid",

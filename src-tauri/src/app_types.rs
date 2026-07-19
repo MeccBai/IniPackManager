@@ -39,6 +39,8 @@ struct RawPackConfig {
     config: RawPackMeta,
     #[serde(rename = "Options", default)]
     options: Vec<RawPackOption>,
+    #[serde(skip)]
+    option_groups: Vec<RawPackOptionGroup>,
     #[serde(rename = "Data", default)]
     data: RawPackData,
     #[serde(rename = "Resource", default)]
@@ -73,6 +75,32 @@ struct RawPackMeta {
     game: String,
     #[serde(rename = "Version", alias = "version", default)]
     version: i64,
+    #[serde(
+        rename = "OptionGroups",
+        alias = "option_groups",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
+    option_groups: Vec<String>,
+    #[serde(
+        rename = "Include",
+        alias = "include",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
+    includes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct RawPackOptionGroup {
+    #[serde(rename = "Name", alias = "name", default)]
+    name: String,
+    #[serde(rename = "Desc", alias = "desc", default)]
+    desc: String,
+    #[serde(rename = "Options", alias = "options", default)]
+    options: Vec<RawPackOption>,
+    #[serde(skip)]
+    tag: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -159,12 +187,14 @@ where
     Err(serde::de::Error::custom("需要字符串或字符串数组"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct RawPackOption {
     #[serde(rename = "Name", alias = "name")]
     name: String,
     #[serde(rename = "Desc", alias = "desc", default)]
     desc: String,
+    #[serde(rename = "UIName", alias = "ui_name", default)]
+    ui_name: String,
     #[serde(rename = "Type", alias = "type")]
     option_type: String,
     #[serde(rename = "Control", alias = "control", default)]
@@ -231,6 +261,8 @@ struct RawPackOption {
     default: Option<toml::Value>,
     #[serde(flatten)]
     extra: HashMap<String, toml::Value>,
+    #[serde(skip)]
+    tag: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -243,6 +275,7 @@ struct PackDefinition {
     version: i64,
     requirements: PackRequirementDefinition,
     options: Vec<PackOptionDefinition>,
+    option_groups: Vec<PackOptionGroupDefinition>,
 }
 
 #[derive(Debug, Serialize)]
@@ -252,9 +285,11 @@ struct PackRequirementDefinition {
     min_version: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct PackOptionDefinition {
     name: String,
+    tag: String,
+    ui_name: String,
     desc: String,
     option_type: String,
     placeholder: String,
@@ -264,6 +299,14 @@ struct PackOptionDefinition {
     max: Option<i64>,
     enum_items: Vec<String>,
     default_enum_index: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct PackOptionGroupDefinition {
+    tag: String,
+    name: String,
+    desc: String,
+    options: Vec<PackOptionDefinition>,
 }
 
 #[derive(Debug, Deserialize)]

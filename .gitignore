@@ -27,3 +27,5 @@ tauri-updater
 IPM.png
 /out/*
 !/out/.gitkeep
+
+todo

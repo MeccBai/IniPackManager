@@ -24,6 +24,8 @@ export type AddInstanceConflictCheck = {
 
 export type PackOptionDefinition = {
   name: string;
+  tag: string;
+  ui_name: string;
   desc: string;
   option_type: string;
   placeholder: string;
@@ -33,6 +35,13 @@ export type PackOptionDefinition = {
   max: number | null;
   enum_items: string[];
   default_enum_index: number | null;
+};
+
+export type PackOptionGroupDefinition = {
+  tag: string;
+  name: string;
+  desc: string;
+  options: PackOptionDefinition[];
 };
 
 export type PackDefinition = {
@@ -48,6 +57,7 @@ export type PackDefinition = {
     min_version?: string | null;
   };
   options: PackOptionDefinition[];
+  option_groups: PackOptionGroupDefinition[];
 };
 
 export type ComponentSetting = {

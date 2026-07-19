@@ -309,6 +309,15 @@ function App() {
     }
   };
 
+  const launchGame = async (instance: InstanceRecord) => {
+    try {
+      await invoke("launch_instance_game", { instancePath: instance.path });
+      setStatus(`已请求启动游戏: ${instance.name}`);
+    } catch (error) {
+      openError(String(error));
+    }
+  };
+
   const selectedInstance = useMemo(
     () => instances.find((item) => item.path === selectedPath) ?? null,
     [instances, selectedPath],
@@ -412,6 +421,7 @@ function App() {
       version: definition.version ?? 0,
       pack_path: definition.pack_path,
       enabled: false,
+      has_options: definition.options.length > 0,
       settings,
     };
 
@@ -481,7 +491,7 @@ function App() {
     }
   };
 
-  const refreshRemotePackages = async () => {
+  const refreshRemotePackages = async (forceRefresh = false) => {
     if (!selectedInstance) {
       openError("请先在左侧选中一个实例");
       return;
@@ -492,6 +502,7 @@ function App() {
         input: {
           registry_url: registryUrl,
           game: selectedInstance.preset_id,
+          force_refresh: forceRefresh,
         },
       });
       setRemoteCatalogName(data.name ?? "");
@@ -754,6 +765,16 @@ function App() {
                         >
                           设置详情
                         </Button>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void launchGame(instance);
+                          }}
+                        >
+                          启动游戏
+                        </Button>
                       </div>
                     </button>
                   </li>
@@ -790,7 +811,7 @@ function App() {
               ) : (
                 <Button
                   appearance="secondary"
-                  onClick={() => void refreshRemotePackages()}
+                  onClick={() => void refreshRemotePackages(true)}
                   disabled={remoteLoading || !selectedInstance}
                 >
                   {remoteLoading ? "刷新中..." : "刷新仓库"}
@@ -841,7 +862,7 @@ function App() {
                 importingUrl={remoteImportingUrl}
                 onQueryChange={setRemoteQuery}
                 onAuthorFilterChange={setRemoteAuthorFilter}
-                onRefresh={refreshRemotePackages}
+                onRefresh={() => refreshRemotePackages(true)}
                 onImport={importRemotePackage}
                 styles={styles}
               />

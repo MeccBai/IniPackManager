@@ -2,6 +2,7 @@ const LEGACY_INSTANCE_STORE_RELATIVE_PATH: &str = "config/data/instances.json";
 const USER_INSTANCE_STORE_RELATIVE_PATH: &str = "IniPackManager/config/data/instances.json";
 const USER_COMPONENT_STATE_RELATIVE_PATH: &str = "IniPackManager/config/data/components.json";
 const USER_APP_SETTINGS_RELATIVE_PATH: &str = "IniPackManager/config/data/settings.json";
+const USER_REMOTE_INDEX_CACHE_RELATIVE_PATH: &str = "IniPackManager/config/data/remote-index-cache.json";
 const PROJECT_PRESETS_RELATIVE_PATH: &str = "config/preset";
 const PACK_MAIN_FILES: [(&str, &str); 5] = [
     ("Rules", "RulesMain.ini"),
@@ -288,6 +289,8 @@ struct ComponentState {
     version: i64,
     pack_path: String,
     enabled: bool,
+    #[serde(default)]
+    has_options: bool,
     settings: Vec<ComponentSetting>,
 }
 
@@ -440,6 +443,8 @@ struct RemotePackageCatalog {
 struct LoadRemotePackagesInput {
     registry_url: String,
     game: String,
+    #[serde(default)]
+    force_refresh: bool,
 }
 
 #[derive(Debug, Deserialize)]

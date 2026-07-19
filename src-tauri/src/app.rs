@@ -11,6 +11,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use tauri_plugin_dialog::DialogExt;
+#[cfg(not(windows))]
+use tauri_plugin_opener::OpenerExt;
 use zip::ZipArchive;
 
 include!("app_types.rs");
@@ -31,6 +33,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_instances,
             list_presets,
+            launch_instance_game,
             list_instance_components,
             preview_add_instance,
             pick_instance_folder,

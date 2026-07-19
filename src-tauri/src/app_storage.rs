@@ -53,6 +53,10 @@ fn app_settings_store_path() -> Result<PathBuf, String> {
     Ok(user_home_dir()?.join(USER_APP_SETTINGS_RELATIVE_PATH))
 }
 
+fn remote_index_cache_path() -> Result<PathBuf, String> {
+    Ok(user_home_dir()?.join(USER_REMOTE_INDEX_CACHE_RELATIVE_PATH))
+}
+
 fn project_root_dir() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|err| format!("无法获取项目目录: {err}"))
 }

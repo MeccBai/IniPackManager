@@ -63,6 +63,7 @@ export type ComponentState = {
   version: number;
   pack_path: string;
   enabled: boolean;
+  has_options: boolean;
   settings: ComponentSetting[];
 };
 

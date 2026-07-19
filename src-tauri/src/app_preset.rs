@@ -177,6 +177,23 @@ fn find_preset_by_id(preset_id: &str) -> Result<PresetSummary, String> {
         .ok_or_else(|| format!("未找到 preset: {}", preset_id))
 }
 
+fn preset_game_name(preset: &PresetSummary) -> Result<String, String> {
+    let entry_path = Path::new(&preset.path).join("entry.toml");
+    let raw = fs::read_to_string(&entry_path)
+        .map_err(|err| format!("读取 preset 入口失败 {}: {err}", entry_path.display()))?;
+    let parsed: toml::Value = toml::from_str(&raw)
+        .map_err(|err| format!("解析 preset 入口失败 {}: {err}", entry_path.display()))?;
+    parsed
+        .get("Game")
+        .and_then(|value| value.as_table())
+        .and_then(|game| game.get("name").or_else(|| game.get("Name")))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("preset 入口缺少 Game.name: {}", entry_path.display()))
+}
+
 fn apply_preset_to_instance(instance_dir: &Path, preset: &PresetSummary) -> Result<(), String> {
     let preset_dir = Path::new(&preset.path);
     if !preset_dir.exists() {

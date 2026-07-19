@@ -1,4 +1,12 @@
 const DEFAULT_REGISTRY_URL: &str = "https://raw.githubusercontent.com/MeccBai/IniPackRepo/master/index.toml";
+const REMOTE_INDEX_CACHE_MAX_AGE_SECS: u64 = 12 * 60 * 60;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteIndexCache {
+    registry_url: String,
+    refreshed_at_unix_secs: u64,
+    index_raw: String,
+}
 
 fn load_effective_app_settings() -> Result<AppSettings, String> {
     let path = app_settings_store_path()?;
@@ -58,6 +66,42 @@ fn fetch_text(url: &str) -> Result<String, String> {
     response
         .text()
         .map_err(|err| format!("读取响应失败 {url}: {err}"))
+}
+
+fn current_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn load_cached_registry_index(index_url: &str, force_refresh: bool) -> Result<String, String> {
+    let cache_path = remote_index_cache_path()?;
+    if !force_refresh {
+        if let Ok(raw) = fs::read_to_string(&cache_path) {
+            if let Ok(cache) = serde_json::from_str::<RemoteIndexCache>(&raw) {
+                let cache_is_current = cache.registry_url.trim() == index_url
+                    && current_unix_secs().saturating_sub(cache.refreshed_at_unix_secs)
+                        < REMOTE_INDEX_CACHE_MAX_AGE_SECS;
+                if cache_is_current {
+                    return Ok(cache.index_raw);
+                }
+            }
+        }
+    }
+
+    let index_raw = fetch_text(index_url)?;
+    let cache = RemoteIndexCache {
+        registry_url: index_url.to_string(),
+        refreshed_at_unix_secs: current_unix_secs(),
+        index_raw: index_raw.clone(),
+    };
+    ensure_parent_dir(&cache_path)?;
+    let raw = serde_json::to_string_pretty(&cache)
+        .map_err(|err| format!("序列化仓库索引缓存失败: {err}"))?;
+    fs::write(&cache_path, raw)
+        .map_err(|err| format!("写入仓库索引缓存失败 {}: {err}", cache_path.display()))?;
+    Ok(index_raw)
 }
 
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
@@ -232,7 +276,11 @@ fn import_pack_archive(zip_path: &Path) -> Result<PackDefinition, String> {
     build_pack_definition(&repo_target, &parsed_config)
 }
 
-fn load_remote_package_catalog(registry_url: &str, game: &str) -> Result<RemotePackageCatalog, String> {
+fn load_remote_package_catalog(
+    registry_url: &str,
+    game: &str,
+    force_refresh: bool,
+) -> Result<RemotePackageCatalog, String> {
     let index_url = registry_url.trim();
     if index_url.is_empty() {
         return Err("中央仓库地址不能为空".to_string());
@@ -242,7 +290,7 @@ fn load_remote_package_catalog(registry_url: &str, game: &str) -> Result<RemoteP
         return Err("当前实例缺少 Preset/Game，无法匹配云端仓库".to_string());
     }
 
-    let index_raw = fetch_text(index_url)?;
+    let index_raw = load_cached_registry_index(index_url, force_refresh)?;
     let index: RemoteRegistryIndex = toml::from_str(&index_raw)
         .map_err(|err| format!("解析中央仓库索引失败 {}: {err}", index_url))?;
 
@@ -307,7 +355,7 @@ fn save_app_settings_command(settings: AppSettings) -> Result<AppSettings, Strin
 
 #[tauri::command]
 fn list_remote_packages(input: LoadRemotePackagesInput) -> Result<RemotePackageCatalog, String> {
-    load_remote_package_catalog(&input.registry_url, &input.game)
+    load_remote_package_catalog(&input.registry_url, &input.game, input.force_refresh)
 }
 
 #[tauri::command]

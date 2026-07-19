@@ -189,20 +189,14 @@ fn resolve_pack_exports(config: &RawPackConfig) -> HashMap<String, String> {
 }
 
 fn resolve_import_placeholders(
-    instance_dir: &Path,
     current_pack_dir: &Path,
+    components: &[ComponentState],
     imports: &HashMap<String, String>,
 ) -> Result<HashMap<String, String>, String> {
     if imports.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let store = load_component_state_store(&component_state_store_path()?)?;
-    let components = store
-        .by_instance
-        .get(&instance_key(&simplify_for_display(instance_dir.to_path_buf())))
-        .cloned()
-        .unwrap_or_default();
     let mut resolved = HashMap::new();
 
     for (alias, reference) in imports {
@@ -263,6 +257,7 @@ fn apply_pack_internal(
     instance_dir: &Path,
     pack_dir: &Path,
     selections: &[PackSelectionInput],
+    components: &[ComponentState],
 ) -> Result<Vec<String>, String> {
     let pack_config = parse_pack_config(pack_dir)?;
     let option_map: HashMap<String, &RawPackOption> = pack_config
@@ -280,7 +275,8 @@ fn apply_pack_internal(
         .map_err(|err| format!("无法创建 Pack 输出目录 {}: {err}", output_base.display()))?;
     copy_dir_recursive(pack_dir, &output_base)?;
     copy_pack_resources(instance_dir, pack_dir, &output_base, &pack_config.resources)?;
-    let import_placeholders = resolve_import_placeholders(instance_dir, pack_dir, &pack_config.imports)?;
+    let import_placeholders =
+        resolve_import_placeholders(pack_dir, components, &pack_config.imports)?;
 
     let mut generated_rel_paths = Vec::new();
     for (group_name, items) in collect_data_items(&pack_config) {

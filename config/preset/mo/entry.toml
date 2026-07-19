@@ -12,3 +12,6 @@ id="mo"
 
 [Extra]
 Phobos="Phobos.dll"
+
+[Game]
+name="MentalOmegaClient.exe"

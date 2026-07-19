@@ -61,7 +61,8 @@ export function LocalComponentsPanel(props: Props) {
                 size="small"
                 appearance="subtle"
                 onClick={() => void onOpenDetail(component)}
-                disabled={!selectedInstancePath}
+                disabled={!selectedInstancePath || !component.has_options}
+                title={!component.has_options ? "该组件没有可配置选项" : undefined}
               >
                 详情设置
               </Button>

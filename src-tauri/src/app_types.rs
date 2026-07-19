@@ -164,6 +164,8 @@ struct RawPackOption {
     desc: String,
     #[serde(rename = "Type", alias = "type")]
     option_type: String,
+    #[serde(rename = "Control", alias = "control", default)]
+    control: bool,
     #[serde(
         rename = "Placeholders",
         alias = "placeholders",
@@ -173,10 +175,20 @@ struct RawPackOption {
         deserialize_with = "deserialize_string_list_or_single"
     )]
     placeholders: Vec<String>,
-    #[serde(rename = "TrueResult", alias = "true_result", default)]
-    true_result: Option<String>,
-    #[serde(rename = "FalseResult", alias = "false_result", default)]
-    false_result: Option<String>,
+    #[serde(
+        rename = "TrueResult",
+        alias = "true_result",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
+    true_results: Vec<String>,
+    #[serde(
+        rename = "FalseResult",
+        alias = "false_result",
+        default,
+        deserialize_with = "deserialize_string_list_or_single"
+    )]
+    false_results: Vec<String>,
     #[serde(
         rename = "Min",
         alias = "min",
@@ -214,6 +226,8 @@ struct RawPackOption {
     results: Vec<String>,
     #[serde(rename = "Default", alias = "default", default)]
     default: Option<toml::Value>,
+    #[serde(flatten)]
+    extra: HashMap<String, toml::Value>,
 }
 
 #[derive(Debug, Serialize)]

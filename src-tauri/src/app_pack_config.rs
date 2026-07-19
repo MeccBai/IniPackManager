@@ -121,6 +121,12 @@ fn build_pack_definition(pack_path: &Path, config: &RawPackConfig) -> Result<Pac
 
     for option in &config.options {
         let option_type = option.option_type.to_lowercase();
+        if option.control && option_type != "bool" && option_type != "enum" {
+            return Err(format!(
+                "控制选项 {} 只能使用 bool 或 enum 类型",
+                option.name
+            ));
+        }
         let display_desc = if option.desc.trim().is_empty() {
             option.name.clone()
         } else {
@@ -131,9 +137,21 @@ fn build_pack_definition(pack_path: &Path, config: &RawPackConfig) -> Result<Pac
         let default_int = option_default_int(option);
         let default_enum_index = option_default_enum_index(option);
 
-        if option_type == "enum" && option.values.is_empty() {
-            return Err(format!("选项 {} 是 enum，但未提供 values", option.name));
-        }
+        let enum_items = if option_type == "enum" {
+            if option.values.is_empty() {
+                return Err(format!("选项 {} 是 enum，但未提供 Values", option.name));
+            }
+            if !option.control {
+                let placeholder_count = option_placeholders(option).len();
+                if placeholder_count == 0 {
+                    return Err(format!("选项 {} 缺少 placeholders", option.name));
+                }
+                enum_option_sets(option, placeholder_count)?;
+            }
+            option.values.clone()
+        } else {
+            Vec::new()
+        };
 
         options.push(PackOptionDefinition {
             name: option.name.clone(),
@@ -144,7 +162,7 @@ fn build_pack_definition(pack_path: &Path, config: &RawPackConfig) -> Result<Pac
             default_int,
             min: option.min,
             max: option.max,
-            enum_items: option.values.clone(),
+            enum_items,
             default_enum_index,
         });
     }

@@ -89,7 +89,8 @@ MinVersion = "1.2.0"
 | `Name` | String | **是** | 选项名称，用于在 Data 中引用 |
 | `Desc` | String | 否 | 选项描述，为空时默认显示 `Name` |
 | `Type` | String | **是** | 选项类型：`bool` / `int` / `enum` |
-| `Placeholders` | String 或 String 数组 | **是** | 数据文件中要被替换的占位符。可传入单个字符串或用逗号分隔的多个占位符 |
+| `Control` | Boolean | 否 | 设为 `true` 时用于控制条件块，不参与占位符替换，`Placeholders` 及各类替换结果字段会被忽略 |
+| `Placeholders` | String 或 String 数组 | 条件必填 | 数据文件中要被替换的占位符。`Control = true` 时忽略该字段，否则必填 |
 | `Default` | 见下方说明 | 否 | 默认值。格式取决于选项类型 |
 
 ### 3.1 bool 类型
@@ -98,8 +99,8 @@ MinVersion = "1.2.0"
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `TrueResult` | String | 否 | 选中时替换占位符的值，默认为 `"true"` |
-| `FalseResult` | String | 否 | 取消选中时替换占位符的值，默认为 `"false"` |
+| `TrueResult` | String 或 String 数组 | 否 | 选中时替换占位符的值，默认为 `"true"` |
+| `FalseResult` | String 或 String 数组 | 否 | 取消选中时替换占位符的值，默认为 `"false"` |
 | `Default` | Boolean 或 `[Boolean]` | 否 | 默认值。可以写成 `true` / `false` 或 `[true]` / `[false]` |
 
 **注意**: bool 类型**不支持** `ValueOutputs` 字段。
@@ -117,15 +118,15 @@ FalseResult = "0"
 Default = true
 ```
 
-多个占位符：
+多个占位符可使用数组分别指定替换结果，数组长度必须与 `Placeholders` 一致；单个字符串会兼容地应用到所有占位符。
 
 ```toml
 [[Options]]
 Name = "DebugMode"
 Type = "bool"
 Placeholders = ["{DEBUG_MODE}", "{DEBUG_LEVEL}"]
-TrueResult = "enabled"
-FalseResult = "disabled"
+TrueResult = ["enabled", "verbose"]
+FalseResult = ["disabled", "quiet"]
 Default = [false]
 ```
 
@@ -183,6 +184,8 @@ ValueOutputs = ["var", "var / 2"]
 | `Results` | String 或 String 数组 | 否 | 各枚举项对应的替换值。不指定时直接使用 `Values` 中的值 |
 | `Default` | Integer、String 或 `[Integer]`、`[String]` | 否 | 默认值。数字为下标（0-based），字符串按名称匹配 |
 
+当 `Placeholders` 包含多个占位符时，可以通过 `ResultsN` 为每个占位符定义独立的输出映射，`N` 从 `1` 开始。例如 `Results1` 对应第一个占位符，`Results2` 对应第二个。所有占位符共享同一个 `Values` 枚举列表，每个 `ResultsN` 的项目数必须与 `Values` 一致；使用这套写法时，每个占位符都必须提供对应的 `ResultsN`，否则配置解析会报错。
+
 **注意**: enum 类型**不支持** `ValueOutputs` 字段。
 
 #### 示例
@@ -208,6 +211,57 @@ Placeholders = "{COLOR}"
 Values = ["Red", "Blue", "Green"]
 Default = 1   # 默认为 "Blue"
 ```
+
+多个占位符使用独立映射：
+
+```toml
+[[Options]]
+Name = "WeaponMode"
+Type = "enum"
+Placeholders = ["{WEAPON_NAME}", "{WEAPON_DAMAGE}"]
+Values = ["Cannon", "Laser"]
+Results1 = ["CANNON", "LASER"]
+Results2 = ["90", "45"]
+Default = 0
+```
+
+### 3.4 Control 条件块
+
+`bool` 和 `enum` 选项可设为 `Control = true`，用于控制 Data 文件中一段文本是否保留。控制选项不需要 `Placeholders`，也不使用 `TrueResult`、`FalseResult`、`Results` 或 `ResultsN`。
+
+控制指令必须独占一行，不能嵌套；管理器会删除所有控制指令行。指令解析发生在默认占位符和普通选项替换之前。
+
+```toml
+[[Options]]
+Name = "EnableElite"
+Type = "bool"
+Control = true
+Default = false
+
+[[Options]]
+Name = "WeaponMode"
+Type = "enum"
+Control = true
+Values = ["Cannon", "Laser"]
+Default = "Cannon"
+```
+
+```ini
+#If $EnableElite
+[EliteTank]
+Strength=800
+#Else
+[EliteTank]
+Strength=500
+#EndIf
+
+#Enum $WeaponMode:Laser
+[LaserTank]
+Weapon=LaserBeam
+#EndEnum
+```
+
+`#If $OptionName` 会在对应 bool 选项为 `true` 时保留区块；`#Else` 可选且每个区块最多一次。`#Enum $EnumName:EnumValue` 会在 enum 选项当前值等于 `Values` 中的 `EnumValue` 时保留区块。`#If`/`#Else`/`#EndIf` 与 `#Enum`/`#EndEnum` 不能互相嵌套，选项不存在、未设置 `Control = true`、类型不匹配或指令未闭合都会报错。
 
 ---
 

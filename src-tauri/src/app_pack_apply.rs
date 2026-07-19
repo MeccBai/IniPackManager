@@ -136,7 +136,15 @@ fn copy_pack_resources(
         }
 
         let target_base = if resource.dir { output_base } else { instance_dir };
-        let target = target_base.join(relative_path);
+        let target = target_base.join(&relative_path);
+        if !resource.dir {
+            let packed_copy = output_base.join(&relative_path);
+            if packed_copy.exists() {
+                fs::remove_file(&packed_copy).map_err(|err| {
+                    format!("移除 Pack 中的 Resource 文件失败 {}: {err}", packed_copy.display())
+                })?;
+            }
+        }
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)
                 .map_err(|err| format!("无法创建资源目录 {}: {err}", parent.display()))?;
@@ -225,12 +233,21 @@ fn apply_pack_internal(
             let mut content = fs::read_to_string(&output_file).map_err(|err| {
                 format!("读取已复制的数据文件失败 {}: {err}", output_file.display())
             })?;
+            content = apply_control_blocks(
+                content,
+                &option_map,
+                &selection_map,
+                &data_file_name,
+            )?;
             content = apply_default_placeholders(content, &pack_config.config);
 
             for option_name in &item.options {
                 let option = option_map
                     .get(option_name)
                     .ok_or_else(|| format!("数据文件 {} 引用了不存在的选项 {}", data_file_name, option_name))?;
+                if option.control {
+                    continue;
+                }
                 let replacements = if let Some(selected_value) = selection_map.get(option_name) {
                     resolve_option_replacements(option, selected_value)?
                 } else {

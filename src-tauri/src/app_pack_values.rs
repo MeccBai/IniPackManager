@@ -186,6 +186,290 @@ fn option_value_outputs(option: &RawPackOption) -> Vec<String> {
     normalize_list_values(&option.value_outputs)
 }
 
+#[derive(Clone)]
+struct EnumOptionSet {
+    values: Vec<String>,
+    results: Vec<String>,
+}
+
+fn enum_indexed_field(
+    option: &RawPackOption,
+    prefix: &str,
+    index: usize,
+) -> Result<Option<Vec<String>>, String> {
+    let field_name = format!("{prefix}{index}");
+    let Some(value) = option.extra.iter().find_map(|(key, value)| {
+        key.eq_ignore_ascii_case(&field_name).then_some(value)
+    }) else {
+        return Ok(None);
+    };
+    let values = if let Some(text) = value.as_str() {
+        vec![text.to_string()]
+    } else if let Some(array) = value.as_array() {
+        array
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| format!("选项 {} 的 {} 必须是字符串或字符串数组", option.name, field_name))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        return Err(format!(
+            "选项 {} 的 {} 必须是字符串或字符串数组",
+            option.name, field_name
+        ));
+    };
+    Ok(Some(normalize_list_values(&values)))
+}
+
+fn enum_option_sets(
+    option: &RawPackOption,
+    placeholder_count: usize,
+) -> Result<Vec<EnumOptionSet>, String> {
+    let mut uses_indexed_fields = false;
+    for index in 1..=placeholder_count {
+        if enum_indexed_field(option, "Results", index)?.is_some() {
+            uses_indexed_fields = true;
+            break;
+        }
+    }
+    if !uses_indexed_fields {
+        return Ok(vec![
+            EnumOptionSet {
+                values: option.values.clone(),
+                results: option.results.clone(),
+            };
+            placeholder_count
+        ]);
+    }
+
+    let mut sets = Vec::with_capacity(placeholder_count);
+    for index in 1..=placeholder_count {
+        let results = enum_indexed_field(option, "Results", index)?.ok_or_else(|| {
+            format!("选项 {} 缺少 Results{}，无法匹配第 {} 个占位符", option.name, index, index)
+        })?;
+        if results.len() != option.values.len() {
+            return Err(format!(
+                "选项 {} 的 Results{} 项目数 ({}) 必须与 Values ({}) 一致",
+                option.name,
+                index,
+                results.len(),
+                option.values.len()
+            ));
+        }
+        sets.push(EnumOptionSet {
+            values: option.values.clone(),
+            results,
+        });
+    }
+    Ok(sets)
+}
+
+fn bool_result_replacements(
+    option_name: &str,
+    placeholders: &[String],
+    configured_results: &[String],
+    default_result: &str,
+    field_name: &str,
+) -> Result<Vec<String>, String> {
+    let results = normalize_list_values(configured_results);
+    if results.is_empty() {
+        return Ok(vec![default_result.to_string(); placeholders.len()]);
+    }
+    if results.len() == 1 {
+        return Ok(vec![results[0].clone(); placeholders.len()]);
+    }
+    if results.len() != placeholders.len() {
+        return Err(format!(
+            "选项 {} 的 {} 数量 ({}) 必须与 Placeholders 数量 ({}) 一致",
+            option_name,
+            field_name,
+            results.len(),
+            placeholders.len()
+        ));
+    }
+    Ok(results)
+}
+
+enum ControlBlock {
+    If { include: bool, has_else: bool },
+    Enum { include: bool },
+}
+
+fn control_selection(
+    option: &RawPackOption,
+    selections: &HashMap<String, serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    if let Some(value) = selections.get(&option.name) {
+        return Ok(value.clone());
+    }
+    option
+        .default
+        .as_ref()
+        .and_then(toml_default_to_json)
+        .ok_or_else(|| format!("控制选项 {} 未提供值且缺少默认值", option.name))
+}
+
+fn require_control_option<'a>(
+    options: &'a HashMap<String, &RawPackOption>,
+    name: &str,
+    option_type: &str,
+    file_name: &str,
+    line_number: usize,
+) -> Result<&'a RawPackOption, String> {
+    let option = options.get(name).ok_or_else(|| {
+        format!("{}:{} 引用了不存在的控制选项 {}", file_name, line_number, name)
+    })?;
+    if !option.control {
+        return Err(format!(
+            "{}:{} 的选项 {} 必须设置 Control = true",
+            file_name, line_number, name
+        ));
+    }
+    if !option.option_type.eq_ignore_ascii_case(option_type) {
+        return Err(format!(
+            "{}:{} 的控制选项 {} 必须是 {} 类型",
+            file_name, line_number, name, option_type
+        ));
+    }
+    Ok(option)
+}
+
+fn control_block_include(block: &Option<ControlBlock>) -> bool {
+    match block {
+        None => true,
+        Some(ControlBlock::If { include, .. } | ControlBlock::Enum { include }) => *include,
+    }
+}
+
+fn parse_control_option_name(line: &str, keyword: &str) -> Result<String, String> {
+    let value = line
+        .strip_prefix(keyword)
+        .unwrap_or_default()
+        .trim();
+    let Some(name) = value.strip_prefix('$') else {
+        return Err(format!("{} 后必须使用 $OptionName", keyword));
+    };
+    if name.is_empty() || name.chars().any(char::is_whitespace) {
+        return Err(format!("{} 的选项名无效", keyword));
+    }
+    Ok(name.to_string())
+}
+
+fn parse_enum_control(line: &str) -> Result<(String, String), String> {
+    let value = line.strip_prefix("#Enum").unwrap_or_default().trim();
+    let Some(value) = value.strip_prefix('$') else {
+        return Err("#Enum 后必须使用 $EnumName:EnumValue".to_string());
+    };
+    let Some((name, enum_value)) = value.split_once(':') else {
+        return Err("#Enum 后必须使用 $EnumName:EnumValue".to_string());
+    };
+    if name.is_empty()
+        || enum_value.is_empty()
+        || name.chars().any(char::is_whitespace)
+        || enum_value.chars().any(char::is_whitespace)
+    {
+        return Err("#Enum 的枚举名或枚举值无效".to_string());
+    }
+    Ok((name.to_string(), enum_value.to_string()))
+}
+
+fn apply_control_blocks(
+    content: String,
+    options: &HashMap<String, &RawPackOption>,
+    selections: &HashMap<String, serde_json::Value>,
+    file_name: &str,
+) -> Result<String, String> {
+    let mut output = String::new();
+    let mut block = None;
+
+    for (index, line) in content.split_inclusive('\n').enumerate() {
+        let line_number = index + 1;
+        let trimmed = line.trim();
+        if trimmed.starts_with("#If") {
+            if block.is_some() {
+                return Err(format!("{}:{} 不允许嵌套控制块", file_name, line_number));
+            }
+            let name = parse_control_option_name(trimmed, "#If")
+                .map_err(|err| format!("{}:{} {}", file_name, line_number, err))?;
+            let option = require_control_option(options, &name, "bool", file_name, line_number)?;
+            let include = control_selection(option, selections)?
+                .as_bool()
+                .ok_or_else(|| format!("{}:{} 的控制选项 {} 需要 bool 值", file_name, line_number, name))?;
+            block = Some(ControlBlock::If {
+                include,
+                has_else: false,
+            });
+            continue;
+        }
+        if trimmed == "#Else" {
+            let Some(ControlBlock::If { include, has_else }) = block.as_mut() else {
+                return Err(format!("{}:{} #Else 未处于 #If 块中", file_name, line_number));
+            };
+            if *has_else {
+                return Err(format!("{}:{} 一个 #If 块只能包含一个 #Else", file_name, line_number));
+            }
+            *include = !*include;
+            *has_else = true;
+            continue;
+        }
+        if trimmed == "#EndIf" {
+            if !matches!(block, Some(ControlBlock::If { .. })) {
+                return Err(format!("{}:{} #EndIf 未匹配 #If", file_name, line_number));
+            }
+            block = None;
+            continue;
+        }
+        if trimmed.starts_with("#Enum") {
+            if block.is_some() {
+                return Err(format!("{}:{} 不允许嵌套控制块", file_name, line_number));
+            }
+            let (name, expected_value) = parse_enum_control(trimmed)
+                .map_err(|err| format!("{}:{} {}", file_name, line_number, err))?;
+            let option = require_control_option(options, &name, "enum", file_name, line_number)?;
+            let value = control_selection(option, selections)?;
+            let selected_index = value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+                .map(|value| value as isize)
+                .or_else(|| {
+                    value
+                        .as_str()
+                        .and_then(|value| option.values.iter().position(|item| item == value))
+                        .map(|value| value as isize)
+                })
+                .ok_or_else(|| format!("{}:{} 的控制选项 {} 需要枚举下标或 Values 中的值", file_name, line_number, name))?;
+            if selected_index < 0 || selected_index as usize >= option.values.len() {
+                return Err(format!("{}:{} 的控制选项 {} 枚举下标越界", file_name, line_number, name));
+            }
+            block = Some(ControlBlock::Enum {
+                include: option.values[selected_index as usize] == expected_value,
+            });
+            continue;
+        }
+        if trimmed == "#EndEnum" {
+            if !matches!(block, Some(ControlBlock::Enum { .. })) {
+                return Err(format!("{}:{} #EndEnum 未匹配 #Enum", file_name, line_number));
+            }
+            block = None;
+            continue;
+        }
+        if control_block_include(&block) {
+            output.push_str(line);
+        }
+    }
+
+    if let Some(block) = block {
+        let expected_end = match block {
+            ControlBlock::If { .. } => "#EndIf",
+            ControlBlock::Enum { .. } => "#EndEnum",
+        };
+        return Err(format!("{} 缺少 {}", file_name, expected_end));
+    }
+    Ok(output)
+}
+
 fn resolve_option_replacements(
     option: &RawPackOption,
     selection: &serde_json::Value,
@@ -204,14 +488,26 @@ fn resolve_option_replacements(
             let value = selection
                 .as_bool()
                 .ok_or_else(|| format!("选项 {} 需要 bool 值", option.name))?;
-            let replacement = if value {
-                option.true_result.clone().unwrap_or_else(|| "true".to_string())
+            let replacements = if value {
+                bool_result_replacements(
+                    &option.name,
+                    &placeholders,
+                    &option.true_results,
+                    "true",
+                    "TrueResult",
+                )?
             } else {
-                option.false_result.clone().unwrap_or_else(|| "false".to_string())
+                bool_result_replacements(
+                    &option.name,
+                    &placeholders,
+                    &option.false_results,
+                    "false",
+                    "FalseResult",
+                )?
             };
             Ok(placeholders
                 .into_iter()
-                .map(|placeholder| (placeholder, replacement.clone()))
+                .zip(replacements)
                 .collect())
         }
         "int" => {
@@ -255,20 +551,21 @@ fn resolve_option_replacements(
                 return Err(format!("选项 {} 的 enum 下标非法", option.name));
             }
             let index = index as usize;
-            if index >= option.values.len() {
+            let enum_sets = enum_option_sets(option, placeholders.len())?;
+            if index >= enum_sets[0].values.len() {
                 return Err(format!("选项 {} 的 enum 下标越界", option.name));
             }
-            let replacement = if !option.results.is_empty() {
-                if index >= option.results.len() {
-                    return Err(format!("选项 {} 的 results 配置不足", option.name));
-                }
-                option.results[index].clone()
-            } else {
-                option.values[index].clone()
-            };
             Ok(placeholders
                 .into_iter()
-                .map(|placeholder| (placeholder, replacement.clone()))
+                .zip(enum_sets)
+                .map(|(placeholder, set)| {
+                    let replacement = set
+                        .results
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| set.values[index].clone());
+                    (placeholder, replacement)
+                })
                 .collect())
         }
         other => Err(format!("不支持的选项类型: {}", other)),

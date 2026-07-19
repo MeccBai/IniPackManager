@@ -42,6 +42,10 @@ struct RawPackConfig {
     data: RawPackData,
     #[serde(rename = "Resource", default)]
     resources: Vec<RawPackResource>,
+    #[serde(rename = "Exports", default)]
+    exports: HashMap<String, String>,
+    #[serde(rename = "Imports", default)]
+    imports: HashMap<String, String>,
     #[serde(rename = "Requirements", default)]
     requirements: RawPackRequirements,
 }

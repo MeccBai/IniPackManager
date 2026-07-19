@@ -177,6 +177,76 @@ fn apply_default_placeholders(content: String, pack_meta: &RawPackMeta) -> Strin
     content
         .replace("{Dir}", &pack_dir_placeholder(pack_meta))
         .replace("{Id}", pack_meta.id.trim())
+        .replace("{Name}", pack_meta.name.trim())
+}
+
+fn resolve_pack_exports(config: &RawPackConfig) -> HashMap<String, String> {
+    config
+        .exports
+        .iter()
+        .map(|(name, value)| (name.clone(), apply_default_placeholders(value.clone(), &config.config)))
+        .collect()
+}
+
+fn resolve_import_placeholders(
+    instance_dir: &Path,
+    current_pack_dir: &Path,
+    imports: &HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    if imports.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let store = load_component_state_store(&component_state_store_path()?)?;
+    let components = store
+        .by_instance
+        .get(&instance_key(&simplify_for_display(instance_dir.to_path_buf())))
+        .cloned()
+        .unwrap_or_default();
+    let mut resolved = HashMap::new();
+
+    for (alias, reference) in imports {
+        let Some((pack_name, export_name)) = reference.trim().split_once('.') else {
+            return Err(format!("Imports.{} 必须使用 包标识.导出名 格式", alias));
+        };
+        if alias.trim().is_empty() || pack_name.trim().is_empty() || export_name.trim().is_empty() {
+            return Err(format!("Imports.{} 配置无效", alias));
+        }
+
+        let mut value = None;
+        for component in components.iter().filter(|component| component.enabled) {
+            let pack_dir = Path::new(component.pack_path.trim());
+            if normalize_path_key(&simplify_for_display(pack_dir.to_path_buf()))
+                == normalize_path_key(&simplify_for_display(current_pack_dir.to_path_buf()))
+            {
+                continue;
+            }
+            let config = parse_pack_config(pack_dir)?;
+            let matches_pack = config.config.id.trim().eq_ignore_ascii_case(pack_name.trim())
+                || config.config.name.trim().eq_ignore_ascii_case(pack_name.trim());
+            if !matches_pack {
+                continue;
+            }
+            let exports = resolve_pack_exports(&config);
+            value = exports
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(export_name.trim()))
+                .map(|(_, value)| value.clone());
+            if value.is_none() {
+                return Err(format!("组件 {} 未导出 {}", pack_name, export_name));
+            }
+            break;
+        }
+        let value = value.ok_or_else(|| format!("未找到已启用的导入组件 {}", pack_name))?;
+        resolved.insert(alias.trim().to_string(), value);
+    }
+    Ok(resolved)
+}
+
+fn apply_import_placeholders(content: String, imports: &HashMap<String, String>) -> String {
+    imports.iter().fold(content, |content, (name, value)| {
+        content.replace(&format!("{{{}}}", name), value)
+    })
 }
 
 fn collect_data_items(config: &RawPackConfig) -> [(&str, &Vec<RawPackDataItem>); 5] {
@@ -210,6 +280,7 @@ fn apply_pack_internal(
         .map_err(|err| format!("无法创建 Pack 输出目录 {}: {err}", output_base.display()))?;
     copy_dir_recursive(pack_dir, &output_base)?;
     copy_pack_resources(instance_dir, pack_dir, &output_base, &pack_config.resources)?;
+    let import_placeholders = resolve_import_placeholders(instance_dir, pack_dir, &pack_config.imports)?;
 
     let mut generated_rel_paths = Vec::new();
     for (group_name, items) in collect_data_items(&pack_config) {
@@ -240,6 +311,7 @@ fn apply_pack_internal(
                 &data_file_name,
             )?;
             content = apply_default_placeholders(content, &pack_config.config);
+            content = apply_import_placeholders(content, &import_placeholders);
 
             for option_name in &item.options {
                 let option = option_map

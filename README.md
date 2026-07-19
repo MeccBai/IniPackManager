@@ -58,6 +58,14 @@ npm run build
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
+带 Tauri Updater 签名的一键打包：
+
+```powershell
+npm run package
+```
+
+脚本会使用项目根目录的 `tauri-updater` 私钥，将 MSI、NSIS 安装包及对应 `.sig` 文件复制到 `out/`，并自动生成可上传到 GitHub Release 的 `out/latest.json`。默认 Release tag 为 `v<版本号>`，可通过 `powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -ReleaseTag <tag>` 覆盖。
+
 ## Pack 配置
 
 组件包规则、占位符、资源部署和控制块语法见：[config.toml 规则文档](docs/config.toml-规则文档.md)。

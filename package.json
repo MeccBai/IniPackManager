@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.73.8",

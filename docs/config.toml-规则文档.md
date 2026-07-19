@@ -23,6 +23,12 @@
 
 [[Resource]]
 # 需要部署的额外资源文件（可以有多个）
+
+[Exports]
+# 供其他组件引用的值
+
+[Imports]
+# 从已启用组件导入的值
 ```
 
 ---
@@ -358,9 +364,45 @@ Options = ["ColorScheme"]
 
 例如，`Dir = "ACS"` 时，`{Dir}/assets.mix` 会展开为 `Pack/ACS/assets.mix`。
 
+`{Name}` 会展开为 `[Config].Name`。这三个自身参数可用于 `[Exports]` 的导出值。
+
 ---
 
-## 6. [[Resource]] — 资源文件
+## 6. [Exports] 与 [Imports] — 跨组件参数
+
+`[Exports]` 将当前组件的值导出给其他组件使用。每个字段名都是导出名，值支持 `{Dir}`、`{Id}`、`{Name}`。
+
+`[Imports]` 为当前组件定义导入别名，格式为 `导入别名 = "组件标识.导出名"`。组件标识可使用被依赖组件的 `[Config].Id` 或 `[Config].Name`，且该组件必须已启用。导入成功后，当前组件的 Data INI 文件中会自动替换 `{导入别名}`。
+
+```toml
+# AmcBase/config.toml
+[Config]
+Name = "AmcBase"
+Dir = "AmcBase"
+
+[Exports]
+ExportDir = "{Dir}"
+ExportId = "{Id}"
+ExportName = "{Name}"
+```
+
+```toml
+# AmcTools/config.toml
+[Config]
+Name = "AmcTools"
+
+[Requirements]
+Pack = ["AmcBase"]
+
+[Imports]
+BaseDir = "AmcBase.ExportDir"
+```
+
+在 AmcTools 的 Data INI 中，`{BaseDir}` 会被替换为 `Pack/AmcBase`。
+
+---
+
+## 7. [[Resource]] — 资源文件
 
 一个组件包可以定义多个 `[[Resource]]` 条目。每个条目指定组件包中的一个文件，以及该文件部署到游戏实例的位置。
 
@@ -383,7 +425,7 @@ Dir = true
 
 ---
 
-## 7. 完整示例
+## 8. 完整示例
 
 ```toml
 [Config]
@@ -449,7 +491,7 @@ Dir = false
 
 ---
 
-## 8. 注意事项
+## 9. 注意事项
 
 1. **Id 匹配规则**: `[Config].Id` 在依赖匹配时统一转为小写进行比较。
 2. **路径安全**: 文件路径中禁止出现 `..`（上级目录）或绝对路径，所有路径必须为相对路径。

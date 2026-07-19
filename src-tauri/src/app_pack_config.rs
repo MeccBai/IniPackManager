@@ -215,7 +215,14 @@ fn effective_component_config_id(component: &ComponentState) -> String {
     }
     let parsed = parse_pack_config(Path::new(pack_path));
     match parsed {
-        Ok(config) => normalized_pack_config_id(&config.config.id),
+        Ok(config) => {
+            let id = normalized_pack_config_id(&config.config.id);
+            if id.is_empty() {
+                normalized_pack_config_id(&config.config.name)
+            } else {
+                id
+            }
+        }
         Err(_) => String::new(),
     }
 }

@@ -1,5 +1,7 @@
-import { Button, Input, Select, Spinner, Text } from "@fluentui/react-components";
+import { Button, Spinner, Text } from "@fluentui/react-components";
 import type { RemotePackageSummary } from "../../types";
+import { tagLabel } from "../../tagTranslations";
+import { RepositoryFilters } from "./RepositoryFilters";
 
 type Props = {
   game: string;
@@ -9,6 +11,9 @@ type Props = {
   query: string;
   authorFilter: string;
   authors: string[];
+  tagFilter: string;
+  tags: string[];
+  onTagFilterChange: (tag: string) => void;
   packages: RemotePackageSummary[];
   importingUrl: string | null;
   onQueryChange: (value: string) => void;
@@ -27,6 +32,9 @@ export function RemoteRepositoryPanel(props: Props) {
     query,
     authorFilter,
     authors,
+    tagFilter,
+    tags,
+    onTagFilterChange,
     packages,
     importingUrl,
     onQueryChange,
@@ -38,24 +46,18 @@ export function RemoteRepositoryPanel(props: Props) {
 
   return (
     <div className={styles.panelBody}>
-      <div className={styles.filterBar}>
-        <Input
-          value={query}
-          onChange={(_, data) => onQueryChange(data.value)}
-          placeholder="搜索名字、简介、作者"
-        />
-        <Select value={authorFilter} onChange={(event) => onAuthorFilterChange(event.target.value)}>
-          <option value="">全部作者</option>
-          {authors.map((author) => (
-            <option key={author} value={author}>
-              {author}
-            </option>
-          ))}
-        </Select>
-        <Button appearance="secondary" onClick={() => void onRefresh()} disabled={loading}>
-          {loading ? "刷新中..." : "刷新列表"}
-        </Button>
-      </div>
+      <RepositoryFilters
+        query={query}
+        authorFilter={authorFilter}
+        authors={authors}
+        tagFilter={tagFilter}
+        tags={tags}
+        onQueryChange={onQueryChange}
+        onAuthorFilterChange={onAuthorFilterChange}
+        onTagFilterChange={onTagFilterChange}
+        trailingAction={<Button appearance="secondary" onClick={() => void onRefresh()} disabled={loading}>{loading ? "刷新中..." : "刷新列表"}</Button>}
+        styles={styles}
+      />
 
       <div className={`${styles.optionCard} ${styles.compactInfoCard}`}>
         <Text weight="semibold">{catalogName || "云端仓库"}</Text>
@@ -74,12 +76,13 @@ export function RemoteRepositoryPanel(props: Props) {
           {packages.map((item) => {
             const disabled = Boolean(item.incompatible_reason) || !item.url.trim();
             return (
-              <div key={`${item.id || item.name}-${item.url}`} className={styles.optionCard}>
+              <div key={`${item.id || item.name}-${item.url}`} className={`${styles.optionCard} ${styles.catalogItemCard}`}>
                 <Text weight="semibold">{item.name}</Text>
                 <Text className={styles.empty}>
                   {(item.author || "未知作者") + ` · v${item.version ?? 0}`}
                 </Text>
                 <Text>{item.desc || "无描述"}</Text>
+                <Text className={styles.tagPill}>{tagLabel(item.tag)}</Text>
                 {item.min_version && <Text className={styles.empty}>最低版本：{item.min_version}</Text>}
                 {item.incompatible_reason && <Text className={styles.danger}>{item.incompatible_reason}</Text>}
                 {!item.url.trim() && <Text className={styles.danger}>缺少下载地址，无法导入。</Text>}

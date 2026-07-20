@@ -1,5 +1,7 @@
 import { Button, Switch, Text } from "@fluentui/react-components";
 import type { ComponentState } from "../../types";
+import { tagLabel } from "../../tagTranslations";
+import { RepositoryFilters } from "./RepositoryFilters";
 
 type Props = {
   components: ComponentState[];
@@ -8,6 +10,14 @@ type Props = {
   onDelete: (component: ComponentState) => Promise<void>;
   onOpenDetail: (component: ComponentState) => Promise<void>;
   onToggleEnabled: (component: ComponentState, enabled: boolean) => Promise<void>;
+  tagFilter: string;
+  tags: string[];
+  query: string;
+  authorFilter: string;
+  authors: string[];
+  onQueryChange: (value: string) => void;
+  onAuthorFilterChange: (value: string) => void;
+  onTagFilterChange: (tag: string) => void;
   styles: Record<string, string>;
 };
 
@@ -19,28 +29,43 @@ export function LocalComponentsPanel(props: Props) {
     onDelete,
     onOpenDetail,
     onToggleEnabled,
+    tagFilter,
+    tags,
+    query,
+    authorFilter,
+    authors,
+    onQueryChange,
+    onAuthorFilterChange,
+    onTagFilterChange,
     styles,
   } = props;
 
-  if (components.length === 0) {
-    return (
-      <div className={styles.optionCard}>
-        <Text className={styles.empty}>暂无组件</Text>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.optionsList}>
-      {components.map((component) => (
+      <RepositoryFilters
+        query={query}
+        authorFilter={authorFilter}
+        authors={authors}
+        tagFilter={tagFilter}
+        tags={tags}
+        onQueryChange={onQueryChange}
+        onAuthorFilterChange={onAuthorFilterChange}
+        onTagFilterChange={onTagFilterChange}
+        styles={styles}
+      />
+      {components.length === 0 ? (
+        <div className={styles.optionCard}><Text className={styles.empty}>当前筛选条件下没有本地组件。</Text></div>
+      ) : components.map((component) => (
         <div
           key={component.id}
-          className={`${styles.optionCard} ${activeComponentId === component.id ? styles.activeOptionCard : ""}`}
+          className={`${styles.optionCard} ${styles.catalogItemCard} ${activeComponentId === component.id ? styles.activeOptionCard : ""}`}
         >
           <Text weight="semibold">{component.name}</Text>
           <Text className={styles.empty}>
-            {(component.desc || "无描述") + ` · v${component.version ?? 0}`}
+            {(component.author || "未知作者") + ` · v${component.version ?? 0}`}
           </Text>
+          <Text>{component.desc || "无描述"}</Text>
+          <Text className={styles.tagPill}>{tagLabel(component.tag)}</Text>
           <div className={styles.itemFooter}>
             <Switch
               checked={component.enabled}
@@ -61,10 +86,9 @@ export function LocalComponentsPanel(props: Props) {
                 size="small"
                 appearance="subtle"
                 onClick={() => void onOpenDetail(component)}
-                disabled={!selectedInstancePath || !component.has_options}
-                title={!component.has_options ? "该组件没有可配置选项" : undefined}
+                disabled={!selectedInstancePath}
               >
-                详情设置
+                组件详情
               </Button>
             </div>
           </div>

@@ -48,6 +48,11 @@ export type PackDefinition = {
   pack_path: string;
   name: string;
   desc: string;
+  author: string;
+  author_url: string;
+  desc_detail: string;
+  desc_html: string | null;
+  tag: string;
   dir: string;
   config_id: string;
   version: number;
@@ -56,6 +61,7 @@ export type PackDefinition = {
     pack: string[];
     min_version?: string | null;
   };
+  dependency_names: string[];
   options: PackOptionDefinition[];
   option_groups: PackOptionGroupDefinition[];
 };
@@ -69,8 +75,10 @@ export type ComponentState = {
   id: string;
   name: string;
   desc: string;
+  author: string;
   config_id: string;
   version: number;
+  tag: string;
   pack_path: string;
   enabled: boolean;
   has_options: boolean;
@@ -92,6 +100,7 @@ export type RemotePackageSummary = {
   name: string;
   author: string;
   desc: string;
+  tag: string;
   version: number;
   url: string;
   sha256: string;

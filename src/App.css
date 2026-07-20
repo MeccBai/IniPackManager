@@ -26,6 +26,11 @@ body {
   --item-shadow-hover: 0 10px 18px rgba(19, 74, 150, 0.12);
   --item-active-border: #5b8bff;
   --item-active-shadow: 0 0 0 2px rgba(91, 139, 255, 0.22), 0 10px 20px rgba(19, 74, 150, 0.14);
+  --catalog-item-bg: rgba(255, 255, 255, 0.97);
+  --catalog-item-border: #b8cdf7;
+  --catalog-item-border-hover: #6d98e8;
+  --catalog-item-shadow: 0 5px 14px rgba(19, 74, 150, 0.13);
+  --catalog-item-shadow-hover: 0 12px 24px rgba(19, 74, 150, 0.2);
   --tag-border: #bfd3ff;
   --tag-color: #2f5fcc;
   --tag-bg: #eff4ff;
@@ -48,6 +53,11 @@ body {
   --item-shadow-hover: 0 10px 22px rgba(2, 7, 20, 0.58);
   --item-active-border: #6ca2ff;
   --item-active-shadow: 0 0 0 2px rgba(108, 162, 255, 0.28), 0 12px 26px rgba(2, 7, 20, 0.62);
+  --catalog-item-bg: rgba(37, 47, 70, 0.98);
+  --catalog-item-border: #607aa9;
+  --catalog-item-border-hover: #8db7ff;
+  --catalog-item-shadow: 0 6px 16px rgba(2, 7, 20, 0.54);
+  --catalog-item-shadow-hover: 0 14px 28px rgba(2, 7, 20, 0.7);
   --tag-border: #4f6ea9;
   --tag-color: #bad4ff;
   --tag-bg: rgba(56, 79, 125, 0.5);

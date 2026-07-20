@@ -11,6 +11,15 @@ const PACK_MAIN_FILES: [(&str, &str); 5] = [
     ("Theme", "ThemeMain.ini"),
     ("Ui", "UIMain.ini"),
 ];
+const PACK_TAGS: [(&str, &str); 7] = [
+    ("General", "常规"),
+    ("Base", "基础"),
+    ("Tools", "工具"),
+    ("Unit", "单位"),
+    ("Feature", "功能"),
+    ("Modifier", "修改"),
+    ("Major", "大型"),
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InstanceRecord {
@@ -67,6 +76,16 @@ struct RawPackMeta {
     name: String,
     #[serde(rename = "Desc", alias = "desc", default)]
     desc: String,
+    #[serde(rename = "Author", alias = "author", default)]
+    author: String,
+    #[serde(rename = "AuthorUrl", alias = "author_url", default)]
+    author_url: String,
+    #[serde(rename = "DescDetail", alias = "desc_detail", default)]
+    desc_detail: String,
+    #[serde(rename = "DescFile", alias = "desc_file", default)]
+    desc_file: String,
+    #[serde(rename = "Tag", alias = "tag", default)]
+    tag: String,
     #[serde(rename = "Dir", alias = "dir", default)]
     dir: String,
     #[serde(rename = "Id", alias = "id", default)]
@@ -270,10 +289,16 @@ struct PackDefinition {
     pack_path: String,
     name: String,
     desc: String,
+    author: String,
+    author_url: String,
+    desc_detail: String,
+    desc_html: Option<String>,
+    tag: String,
     dir: String,
     config_id: String,
     version: i64,
     requirements: PackRequirementDefinition,
+    dependency_names: Vec<String>,
     options: Vec<PackOptionDefinition>,
     option_groups: Vec<PackOptionGroupDefinition>,
 }
@@ -327,9 +352,13 @@ struct ComponentState {
     name: String,
     desc: String,
     #[serde(default)]
+    author: String,
+    #[serde(default)]
     config_id: String,
     #[serde(default)]
     version: i64,
+    #[serde(default)]
+    tag: String,
     pack_path: String,
     enabled: bool,
     #[serde(default)]
@@ -451,6 +480,8 @@ struct RemotePackageEntry {
     author: String,
     #[serde(rename = "Desc", alias = "desc", default)]
     desc: String,
+    #[serde(rename = "Tag", alias = "tag", default)]
+    tag: String,
     #[serde(rename = "Version", alias = "version", default)]
     version: i64,
     #[serde(rename = "Url", alias = "url")]
@@ -467,6 +498,7 @@ struct RemotePackageSummary {
     name: String,
     author: String,
     desc: String,
+    tag: String,
     version: i64,
     url: String,
     sha256: String,

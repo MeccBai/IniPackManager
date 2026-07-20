@@ -247,6 +247,39 @@ export const useAppStyles = makeStyles({
     gap: "10px",
     alignItems: "center",
   },
+  tagFilterBar: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  tagPill: {
+    width: "fit-content",
+    color: tokens.colorBrandForeground1,
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+  packDescriptionHtml: {
+    width: "100%",
+    minHeight: "240px",
+    border: "1px solid var(--item-border)",
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: "var(--panel-bg)",
+  },
+  packAuthorLink: {
+    width: "fit-content",
+    color: tokens.colorBrandForegroundLink,
+    fontWeight: 600,
+    textDecorationLine: "none",
+  },
+  packTitleRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "16px",
+  },
+  packAuthorText: {
+    color: tokens.colorNeutralForeground3,
+  },
   optionCard: {
     display: "grid",
     gap: "6px",
@@ -254,6 +287,19 @@ export const useAppStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     border: "1px solid var(--item-border)",
     backgroundColor: "var(--item-bg)",
+  },
+  catalogItemCard: {
+    gap: "8px",
+    ...shorthands.padding("14px", "16px"),
+    border: "1px solid var(--catalog-item-border)",
+    backgroundColor: "var(--catalog-item-bg)",
+    boxShadow: "var(--catalog-item-shadow)",
+    transition: "transform 160ms ease, box-shadow 160ms ease, border 160ms ease",
+    ":hover": {
+      border: "1px solid var(--catalog-item-border-hover)",
+      boxShadow: "var(--catalog-item-shadow-hover)",
+      transform: "translateY(-1px)",
+    },
   },
   compactInfoCard: {
     gap: "4px",

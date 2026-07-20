@@ -241,8 +241,10 @@ fn import_instance_configuration(
             id: component_id(&simplify_for_display(pack_path.clone())),
             name: config.config.name,
             desc: config.config.desc,
+            author: config.config.author,
             config_id: config.config.id,
             version: config.config.version,
+            tag: config.config.tag,
             pack_path: simplify_for_display(pack_path),
             enabled: saved.enabled,
             has_options: !config.options.is_empty(),
@@ -286,9 +288,11 @@ fn list_instance_components(instance_path: String) -> Result<Vec<ComponentState>
     let store = load_component_state_store(&store_path)?;
     let mut components = store.by_instance.get(&key).cloned().unwrap_or_default();
     for component in &mut components {
-        component.has_options = parse_pack_config(Path::new(component.pack_path.trim()))
-            .map(|config| !config.options.is_empty())
-            .unwrap_or(false);
+        if let Ok(config) = parse_pack_config(Path::new(component.pack_path.trim())) {
+            component.has_options = !config.options.is_empty();
+            component.tag = config.config.tag;
+            component.author = config.config.author;
+        }
     }
     Ok(components)
 }
@@ -320,6 +324,8 @@ fn save_instance_component_state(
         component.config_id = pack_config.config.id.trim().to_string();
     }
     component.version = pack_config.config.version;
+    component.tag = pack_config.config.tag.clone();
+    component.author = pack_config.config.author.clone();
 
     let instance_key = instance_key(&input.instance_path);
     let store_path = component_state_store_path()?;

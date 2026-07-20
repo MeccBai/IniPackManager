@@ -1,9 +1,9 @@
 [package]
 name = "ini_pack_manager"
 version = "1.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+description = "A INI Pack Manager for RA2"
+authors = ["MeccBai"]
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

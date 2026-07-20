@@ -329,6 +329,7 @@ fn load_remote_package_catalog(
         packages: packages
             .into_iter()
             .map(|package| RemotePackageSummary {
+                tag: normalize_pack_tag(&package.tag).unwrap_or_default(),
                 id: package.id.trim().to_string(),
                 name: package.name.trim().to_string(),
                 author: package.author.trim().to_string(),
@@ -337,7 +338,9 @@ fn load_remote_package_catalog(
                 url: package.url.trim().to_string(),
                 sha256: package.sha256.trim().to_string(),
                 min_version: package.min_version.trim().to_string(),
-                incompatible_reason: package_incompatible_reason(&package.min_version),
+                incompatible_reason: normalize_pack_tag(&package.tag)
+                    .err()
+                    .or_else(|| package_incompatible_reason(&package.min_version)),
             })
             .collect(),
     })

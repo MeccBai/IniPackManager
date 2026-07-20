@@ -39,17 +39,17 @@
 
 ## 开发
 
-前置条件：安装 Node.js、Rust stable 和目标平台所需的 Tauri 构建环境。
+前置条件：安装bun、Rust stable 和目标平台所需的 Tauri 构建环境。
 
 ```bash
-npm install
-npm run tauri dev
+bun install
+bun run tauri dev
 ```
 
 构建前端：
 
 ```bash
-npm run build
+bun run build
 ```
 
 检查 Rust 后端：
@@ -61,7 +61,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 带 Tauri Updater 签名的一键打包：
 
 ```powershell
-npm run package
+bun run package
 ```
 
 脚本会使用项目根目录的 `tauri-updater` 私钥，将 MSI、NSIS 安装包及对应 `.sig` 文件复制到 `out/`，并自动生成可上传到 GitHub Release 的 `out/latest.json`。默认 Release tag 为 `v<版本号>`，可通过 `powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -ReleaseTag <tag>` 覆盖。

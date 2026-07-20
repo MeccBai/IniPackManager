@@ -32,6 +32,8 @@ import { InstanceDetailDialog } from "./components/dialogs/InstanceDetailDialog"
 import { SettingsPageLayout } from "./components/dialogs/SettingsPageLayout";
 import { LocalComponentsPanel } from "./components/panels/LocalComponentsPanel";
 import { RemoteRepositoryPanel } from "./components/panels/RemoteRepositoryPanel";
+import { collectCatalogAuthors, collectCatalogTags, filterCatalogItems } from "./catalogFilters";
+import { tagLabel } from "./tagTranslations";
 import type {
   AppSettings,
   AddInstanceConflictCheck,
@@ -70,6 +72,10 @@ function App() {
   const [activeCatalogTab, setActiveCatalogTab] = useState<"local" | "remote">("local");
   const [remoteQuery, setRemoteQuery] = useState("");
   const [remoteAuthorFilter, setRemoteAuthorFilter] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const [localAuthorFilter, setLocalAuthorFilter] = useState("");
+  const [localTagFilter, setLocalTagFilter] = useState("");
+  const [remoteTagFilter, setRemoteTagFilter] = useState("");
 
   const [packLoading, setPackLoading] = useState(false);
   const [packApplying, setPackApplying] = useState(false);
@@ -78,6 +84,7 @@ function App() {
   const [packDetailOpen, setPackDetailOpen] = useState(false);
   const [packDefinition, setPackDefinition] = useState<PackDefinition | null>(null);
   const [activeOptionTag, setActiveOptionTag] = useState("");
+  const [activePackPage, setActivePackPage] = useState("overview");
   const [components, setComponents] = useState<ComponentState[]>([]);
   const [activeComponentId, setActiveComponentId] = useState<string | null>(null);
   const [editingSettings, setEditingSettings] = useState<Record<string, boolean | number>>({});
@@ -329,38 +336,29 @@ function App() {
     () => components.find((item) => item.id === activeComponentId) ?? null,
     [components, activeComponentId],
   );
-  const topContextText = useMemo(() => {
-    const instanceName = selectedInstance?.name?.trim() || "未选择实例";
-    const componentName = activeComponent?.name?.trim() || "未选择组件";
-    return `${instanceName} - ${componentName}`;
-  }, [selectedInstance, activeComponent]);
   const activeOptionGroup = useMemo(() => {
     if (!packDefinition) {
       return null;
     }
-    return packDefinition.option_groups.find((group) => group.tag === activeOptionTag)
+    return packDefinition.option_groups.find((group) => group.tag === activePackPage)
+      ?? packDefinition.option_groups.find((group) => group.tag === activeOptionTag)
       ?? packDefinition.option_groups[0]
       ?? null;
-  }, [activeOptionTag, packDefinition]);
-
-  const remoteAuthors = useMemo(
-    () => [...new Set(remotePackages.map((item) => item.author.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [remotePackages],
+  }, [activeOptionTag, activePackPage, packDefinition]);
+  const localAuthors = useMemo(() => collectCatalogAuthors(components), [components]);
+  const localTags = useMemo(() => collectCatalogTags(components), [components]);
+  const filteredComponents = useMemo(
+    () => filterCatalogItems(components, { query: localQuery, author: localAuthorFilter, tag: localTagFilter }),
+    [components, localAuthorFilter, localQuery, localTagFilter],
   );
 
-  const filteredRemotePackages = useMemo(() => {
-    const query = remoteQuery.trim().toLowerCase();
-    return remotePackages.filter((item) => {
-      if (remoteAuthorFilter && item.author !== remoteAuthorFilter) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      const haystack = [item.name, item.desc, item.author].join("\n").toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [remoteAuthorFilter, remotePackages, remoteQuery]);
+  const remoteAuthors = useMemo(() => collectCatalogAuthors(remotePackages), [remotePackages]);
+
+  const filteredRemotePackages = useMemo(
+    () => filterCatalogItems(remotePackages, { query: remoteQuery, author: remoteAuthorFilter, tag: remoteTagFilter }),
+    [remoteAuthorFilter, remotePackages, remoteQuery, remoteTagFilter],
+  );
+  const remoteTags = useMemo(() => collectCatalogTags(remotePackages), [remotePackages]);
 
   useEffect(() => {
     if (activeCatalogTab !== "remote" || !selectedInstance) {
@@ -427,8 +425,10 @@ function App() {
       id: "",
       name: definition.name,
       desc: definition.desc,
+      author: definition.author,
       config_id: definition.config_id || "",
       version: definition.version ?? 0,
+      tag: definition.tag,
       pack_path: definition.pack_path,
       enabled: false,
       has_options: definition.options.length > 0,
@@ -449,6 +449,7 @@ function App() {
     }
     setPackDefinition(definition);
     setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
+    setActivePackPage("overview");
     setEditingSettings(defaults);
     setStatus(`${existed ? "已更新" : "已导入"}组件: ${definition.name} v${definition.version ?? 0}`);
   };
@@ -572,6 +573,7 @@ function App() {
     });
     setPackDefinition(definition);
     setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
+    setActivePackPage("overview");
 
     const currentValues: Record<string, boolean | number> = {};
     for (const option of definition.options) {
@@ -726,7 +728,7 @@ function App() {
       className={styles.page}
     >
       <div className={styles.appTopBar}>
-        <Text className={styles.contextTitle}>{topContextText}</Text>
+        <Text className={styles.contextTitle}>Ini Pack Manager 1.1.0</Text>
         <Button appearance="secondary" onClick={() => setGlobalSettingsOpen(true)}>
           全局设置
         </Button>
@@ -853,12 +855,20 @@ function App() {
 
             {activeCatalogTab === "local" ? (
               <LocalComponentsPanel
-                components={components}
+                components={filteredComponents}
                 selectedInstancePath={selectedInstance?.path ?? null}
                 activeComponentId={activeComponentId}
                 onDelete={deleteComponent}
                 onOpenDetail={openComponentDetail}
                 onToggleEnabled={setComponentEnabled}
+                tagFilter={localTagFilter}
+                tags={localTags}
+                query={localQuery}
+                authorFilter={localAuthorFilter}
+                authors={localAuthors}
+                onQueryChange={setLocalQuery}
+                onAuthorFilterChange={setLocalAuthorFilter}
+                onTagFilterChange={setLocalTagFilter}
                 styles={styles}
               />
             ) : (
@@ -870,6 +880,9 @@ function App() {
                 query={remoteQuery}
                 authorFilter={remoteAuthorFilter}
                 authors={remoteAuthors}
+                tagFilter={remoteTagFilter}
+                tags={remoteTags}
+                onTagFilterChange={setRemoteTagFilter}
                 packages={filteredRemotePackages}
                 importingUrl={remoteImportingUrl}
                 onQueryChange={setRemoteQuery}
@@ -1000,12 +1013,41 @@ function App() {
                 <Text className={styles.empty}>当前没有可配置的组件。</Text>
               ) : (
                 <SettingsPageLayout
-                  activePage={activeOptionGroup?.tag ?? ""}
-                  pages={packDefinition.option_groups.map((group) => ({ id: group.tag, label: group.name }))}
-                  onPageChange={setActiveOptionTag}
+                  activePage={activePackPage}
+                  pages={[{ id: "overview", label: "概览" }, ...packDefinition.option_groups.map((group) => ({ id: group.tag, label: group.name }))]}
+                  onPageChange={(page) => {
+                    setActivePackPage(page);
+                    if (page !== "overview") setActiveOptionTag(page);
+                  }}
                   styles={styles}
                 >
-                    {activeOptionGroup && (
+                    {activePackPage === "overview" ? (
+                      <>
+                        <div className={styles.settingsPageHeader}>
+                          <Text className={styles.settingsEyebrow}>TAG · {tagLabel(packDefinition.tag)}</Text>
+                          <div className={styles.packTitleRow}>
+                            <Text className={styles.settingsTitle}>{packDefinition.name}</Text>
+                            {packDefinition.author_url.trim() ? (
+                              <a className={styles.packAuthorLink} href={packDefinition.author_url} target="_blank" rel="noreferrer">
+                                {packDefinition.author.trim() || "未知作者"}
+                              </a>
+                            ) : (
+                              <Text className={styles.packAuthorText}>{packDefinition.author.trim() || "未知作者"}</Text>
+                            )}
+                          </div>
+                          <Text className={styles.settingsLead}>{packDefinition.desc || "暂无简介"}</Text>
+                        </div>
+                        <div className={styles.settingsSection}>
+                          <Text weight="semibold">详细说明</Text>
+                          <Text>{packDefinition.desc_detail || packDefinition.desc || "暂无详细说明。"}</Text>
+                          {packDefinition.desc_html && <iframe className={styles.packDescriptionHtml} sandbox="" srcDoc={packDefinition.desc_html} title={`${packDefinition.name} 详细说明`} />}
+                        </div>
+                        <div className={styles.settingsSection}>
+                          <Text weight="semibold">依赖组件</Text>
+                          {packDefinition.dependency_names.length === 0 ? <Text className={styles.empty}>此组件不依赖其他组件。</Text> : packDefinition.dependency_names.map((name) => <Text key={name}>{name}</Text>)}
+                        </div>
+                      </>
+                    ) : activeOptionGroup && (
                       <>
                         <div className={styles.settingsPageHeader}>
                           <Text className={styles.settingsEyebrow}>TAG · {activeOptionGroup.tag}</Text>
@@ -1027,7 +1069,7 @@ function App() {
               <Button
                 appearance="primary"
                 onClick={() => void saveComponentDetail(true)}
-                disabled={packApplying || !activeComponent}
+                disabled={packApplying || !activeComponent || packDefinition?.options.length === 0}
               >
                 {packApplying ? "保存中..." : "保存并应用"}
               </Button>

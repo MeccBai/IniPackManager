@@ -10,13 +10,13 @@
 
 ```toml
 [Config]
-# 组件包元信息
+# 组件包元信息，以及新版 OptionGroups / Include
 
 [Requirements]
 # 依赖要求
 
-[[Options]]
-# 用户可配置选项（可以有多个）
+[General]
+# 新版选项组（每个组包含 [[General.Options]]）
 
 [Data]
 # 数据文件分组（Rules / Art / Ai / Theme / Ui）
@@ -39,10 +39,21 @@
 |------|------|------|------|
 | `Name` | String | **是** | 组件包显示名称 |
 | `Desc` | String | 否 | 组件包描述说明 |
+| `DescDetail` | String | 否 | 组件详情页的长文本说明。未填写时回退使用 `Desc` |
+| `DescFile` | String | 否 | 包内 HTML 说明文件的相对路径（仅 `.html` / `.htm`）。详情页会在无脚本容器中展示 |
+| `Author` | String | 否 | 作者名称；为空时详情页显示“未知作者” |
+| `AuthorUrl` | String | 否 | 作者主页 URL。填写后作者名称显示为可点击蓝色链接 |
+| `Tag` | String | 否 | 包分类。旧包默认 `General`；只能使用下方允许的仓库 Tag |
 | `Dir` | String | 否 | 输出子目录。组件文件会被输出到 `Pack/{Dir}/` 下，为空则直接输出到 `Pack/` |
 | `Id` | String | 否 | 组件包唯一标识符。用于依赖匹配和组件去重，忽略大小写 |
 | `Game` | String | 否 | 目标游戏 ID（如 `mo`、`yr`），启用时校验与实例 Preset 是否匹配 |
 | `Version` | Integer | 否 | 组件包的版本号，默认 `0` |
+| `OptionGroups` | String 数组 | 否 | 新版选项组 Tag 的显示顺序。填写后不能再使用传统 `[[Options]]` |
+| `Include` | String 数组 | 否 | 新版选项组文件的包内相对路径。每个文件只能描述一个完整选项组，不允许嵌套 Include |
+
+允许的 Tag：`General`（常规）、`Base`（基础）、`Tools`（工具）、`Unit`（单位）、`Feature`（功能）、`Modifier`（修改）、`Major`（大型）。
+
+`DescFile` 必须指向组件包内的 `.html` 或 `.htm` 文件，不能使用绝对路径或 `..`。该文件仅用于详情页展示，并会在受限容器中加载；常规简介仍建议放在 `Desc`，较长的纯文本说明放在 `DescDetail`。
 
 ### 示例
 
@@ -50,6 +61,10 @@
 [Config]
 Name = "我的规则包"
 Desc = "这是一个示例组件包"
+DescDetail = "这里可以写入多行的详细说明。"
+Author = "Amc白"
+AuthorUrl = "https://example.com"
+Tag = "Feature"
 Dir = "MyMod"
 Id = "my_rules_pack"
 Game = "mo"
@@ -84,22 +99,72 @@ MinVersion = "1.2.0"
 
 ---
 
-## 3. [[Options]] — 用户可配置选项
+## 3. 新版 OptionGroups 与 Include
 
-一个组件包可以定义多个选项，每个选项对应一个 `[[Options]]` 表。选项支持三种类型：`bool`、`int`、`enum`。
+新版配置通过 `Config.OptionGroups` 声明选项组。每个组使用 `[Tag]` 表，并在其中定义多个 `[[Tag.Options]]`。组内选项在 Data、控制块和保存配置中使用完整名称 `Tag.Name`。
+
+```toml
+[Config]
+Name = "Pack 2.0"
+Tag = "Feature"
+OptionGroups = ["General", "Advanced"]
+Include = ["groups/advanced.toml"]
+
+[General]
+Name = "常规选项"
+Desc = "日常开关。"
+
+[[General.Options]]
+Name = "EnableFeature"
+UIName = "启用功能"
+Desc = "启用功能，控制 xxx。"
+Type = "bool"
+Control = true
+
+[[Data.Rules]]
+File = "PackRules.ini"
+Options = ["General.EnableFeature"]
+```
+
+`groups/advanced.toml` 必须只有一个完整组选项表，且不允许再写 `Include`：
+
+```toml
+[Advanced]
+Name = "高级选项"
+
+[[Advanced.Options]]
+Name = "Level"
+Type = "int"
+Min = 0
+Default = 1
+Placeholders = "{LEVEL}"
+ValueOutputs = "var"
+```
+
+规则：
+
+- `OptionGroups` 中的每个 Tag 必须恰好定义一次，可在主 `config.toml` 或一个 Include 文件中定义。
+- Include 路径必须在包内，不能使用绝对路径或 `..`。
+- Include 文件必须保持单层扁平：只定义一个组，不允许递归 Include。
+- `UIName` 是选项在设置页中的短标题；未填写时使用 `Desc`。
+
+## 4. 传统 [[Options]]（兼容语法）
+
+一个组件包可以定义多个选项，每个选项对应一个 `[[Options]]` 表。该语法仍受支持，但会被兼容层转换为唯一的 `General` 组；传统选项名称保持不变。选项支持三种类型：`bool`、`int`、`enum`。
 
 ### 通用字段
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `Name` | String | **是** | 选项名称，用于在 Data 中引用 |
+| `UIName` | String | 否 | 设置页显示的短标题；为空时使用 `Desc` |
 | `Desc` | String | 否 | 选项描述，为空时默认显示 `Name` |
 | `Type` | String | **是** | 选项类型：`bool` / `int` / `enum` |
 | `Control` | Boolean | 否 | 设为 `true` 时用于控制条件块，不参与占位符替换，`Placeholders` 及各类替换结果字段会被忽略 |
 | `Placeholders` | String 或 String 数组 | 条件必填 | 数据文件中要被替换的占位符。`Control = true` 时忽略该字段，否则必填 |
 | `Default` | 见下方说明 | 否 | 默认值。格式取决于选项类型 |
 
-### 3.1 bool 类型
+### 4.1 bool 类型
 
 用于开关型选项。
 
@@ -136,7 +201,7 @@ FalseResult = ["disabled", "quiet"]
 Default = [false]
 ```
 
-### 3.2 int 类型
+### 4.2 int 类型
 
 用于整数值选项。
 
@@ -180,7 +245,7 @@ Max = [500]
 ValueOutputs = ["var", "var / 2"]
 ```
 
-### 3.3 enum 类型
+### 4.3 enum 类型
 
 用于枚举选项。
 
@@ -231,7 +296,7 @@ Results2 = ["90", "45"]
 Default = 0
 ```
 
-### 3.4 Control 条件块
+### 4.4 Control 条件块
 
 `bool` 和 `enum` 选项可设为 `Control = true`，用于控制 Data 文件中一段文本是否保留。控制选项不需要 `Placeholders`，也不使用 `TrueResult`、`FalseResult`、`Results` 或 `ResultsN`。
 
@@ -271,7 +336,7 @@ Weapon=LaserBeam
 
 ---
 
-## 4. [Data] — 数据文件分组
+## 5. [Data] — 数据文件分组
 
 `[Data]` 段包含五个子分组，分别对应游戏的不同 INI 文件类型：
 
@@ -315,7 +380,7 @@ Options = ["Difficulty"]
 |------|------|------|------|
 | `Name` | String | 否* | 数据项名称。如果未提供 `File`，则用作文件名 |
 | `File` | String | 否* | 数据文件名（相对于组件包目录）。`Name` 和 `File` 至少填一个 |
-| `Options` | String 数组 | 否 | 此文件引用的选项名称列表。对应 `[[Options]]` 中的 `Name` |
+| `Options` | String 数组 | 否 | 此文件引用的选项列表。传统语法填写 `Name`；新版 OptionGroups 填写完整名称 `Tag.Name` |
 | `NeedInclude` | Boolean | 否 | 是否需要在主 INI 文件的 `[#include]` 段中注册。默认 `true` |
 
 > **\*** `Name` 和 `File` 至少提供一个。优先使用 `File`；若 `File` 为空，则使用 `Name` 作为文件名。
@@ -353,7 +418,7 @@ Options = ["ColorScheme"]
 
 ---
 
-## 5. 默认占位符
+## 6. 默认占位符
 
 除了 `[[Options]]` 自定义的占位符，管理器会在每个 `[Data.*]` 数据文件中自动替换以下占位符，再处理选项占位符：
 
@@ -368,7 +433,7 @@ Options = ["ColorScheme"]
 
 ---
 
-## 6. [Exports] 与 [Imports] — 跨组件参数
+## 7. [Exports] 与 [Imports] — 跨组件参数
 
 `[Exports]` 将当前组件的值导出给其他组件使用。每个字段名都是导出名，值支持 `{Dir}`、`{Id}`、`{Name}`。
 
@@ -402,7 +467,7 @@ BaseDir = "AmcBase.ExportDir"
 
 ---
 
-## 7. [[Resource]] — 资源文件
+## 8. [[Resource]] — 资源文件
 
 一个组件包可以定义多个 `[[Resource]]` 条目。每个条目指定组件包中的一个文件，以及该文件部署到游戏实例的位置。
 
@@ -425,7 +490,7 @@ Dir = true
 
 ---
 
-## 8. 完整示例
+## 9. 完整示例
 
 ```toml
 [Config]
@@ -491,7 +556,7 @@ Dir = false
 
 ---
 
-## 9. 注意事项
+## 10. 注意事项
 
 1. **Id 匹配规则**: `[Config].Id` 在依赖匹配时统一转为小写进行比较。
 2. **路径安全**: 文件路径中禁止出现 `..`（上级目录）或绝对路径，所有路径必须为相对路径。

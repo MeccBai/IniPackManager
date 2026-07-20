@@ -64,6 +64,64 @@ fn parse_pack_config_text(raw: &str, pack_path: &Path, source: &Path) -> Result<
     })
 }
 
+fn normalize_pack_tag(raw: &str) -> Result<String, String> {
+    let tag = raw.trim();
+    if tag.is_empty() {
+        return Ok("General".to_string());
+    }
+    PACK_TAGS
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(tag))
+        .map(|(key, _)| (*key).to_string())
+        .ok_or_else(|| format!("未知 Tag {tag}，请使用仓库定义的 Tag"))
+}
+
+fn load_pack_desc_html(pack_path: &Path, desc_file: &str) -> Result<Option<String>, String> {
+    let file = desc_file.trim();
+    if file.is_empty() {
+        return Ok(None);
+    }
+    let relative = safe_relative_path(file)
+        .map_err(|_| format!("DescFile 路径无效，必须是包内相对路径: {file}"))?;
+    let extension = relative.extension().and_then(|extension| extension.to_str());
+    if !extension.is_some_and(|extension| extension.eq_ignore_ascii_case("html") || extension.eq_ignore_ascii_case("htm")) {
+        return Err(format!("DescFile 必须指向 .html 文件: {file}"));
+    }
+    fs::read_to_string(pack_path.join(relative))
+        .map(Some)
+        .map_err(|err| format!("读取 DescFile 失败 {file}: {err}"))
+}
+
+fn dependency_display_names(requirements: &[String]) -> Vec<String> {
+    let repository = repository_root_dir().ok();
+    requirements
+        .iter()
+        .map(|requirement| {
+            let name = requirement.trim();
+            let Some(repository) = repository.as_ref() else {
+                return name.to_string();
+            };
+            let Ok(entries) = fs::read_dir(repository) else {
+                return name.to_string();
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                if let Ok(config) = parse_pack_config(&path) {
+                    if config.config.id.eq_ignore_ascii_case(name)
+                        || config.config.name.eq_ignore_ascii_case(name)
+                    {
+                        return config.config.name;
+                    }
+                }
+            }
+            name.to_string()
+        })
+        .collect()
+}
+
 fn parse_pack_config_with_include_loader<F>(
     raw: &str,
     source: &Path,
@@ -74,6 +132,8 @@ where
 {
     let mut config: RawPackConfig = toml::from_str(raw)
         .map_err(|err| format!("解析 Pack 配置失败 {}: {err}", source.display()))?;
+    config.config.tag = normalize_pack_tag(&config.config.tag)
+        .map_err(|err| format!("{}: {err}", source.display()))?;
     if config.config.option_groups.is_empty() {
         let mut options = config.options.clone();
         for option in &mut options {
@@ -328,6 +388,11 @@ fn build_pack_definition(pack_path: &Path, config: &RawPackConfig) -> Result<Pac
         pack_path: simplify_for_display(pack_path.to_path_buf()),
         name: config.config.name.clone(),
         desc: config.config.desc.clone(),
+        author: config.config.author.clone(),
+        author_url: config.config.author_url.clone(),
+        desc_detail: config.config.desc_detail.clone(),
+        desc_html: load_pack_desc_html(pack_path, &config.config.desc_file)?,
+        tag: config.config.tag.clone(),
         dir: config.config.dir.clone(),
         config_id: config.config.id.trim().to_string(),
         version: config.config.version,
@@ -353,6 +418,7 @@ fn build_pack_definition(pack_path: &Path, config: &RawPackConfig) -> Result<Pac
                 .map(|item| item.trim().to_string())
                 .filter(|item| !item.is_empty()),
         },
+        dependency_names: dependency_display_names(&config.requirements.pack),
         option_groups: config
             .option_groups
             .iter()

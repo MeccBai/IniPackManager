@@ -15,11 +15,11 @@ type Props = {
   tags: string[];
   onTagFilterChange: (tag: string) => void;
   packages: RemotePackageSummary[];
-  importingUrl: string | null;
+  downloadingUrls: string[];
   onQueryChange: (value: string) => void;
   onAuthorFilterChange: (value: string) => void;
   onRefresh: () => Promise<void>;
-  onImport: (item: RemotePackageSummary) => Promise<void>;
+  onImport: (item: RemotePackageSummary) => void;
   styles: Record<string, string>;
 };
 
@@ -36,7 +36,7 @@ export function RemoteRepositoryPanel(props: Props) {
     tags,
     onTagFilterChange,
     packages,
-    importingUrl,
+    downloadingUrls,
     onQueryChange,
     onAuthorFilterChange,
     onRefresh,
@@ -74,7 +74,10 @@ export function RemoteRepositoryPanel(props: Props) {
       ) : (
         <div className={styles.optionsList}>
           {packages.map((item) => {
-            const disabled = Boolean(item.incompatible_reason) || !item.url.trim();
+            const queued = downloadingUrls.includes(item.url);
+            const downloaded = item.local_status === "downloaded";
+            const updateAvailable = item.local_status === "update_available";
+            const disabled = Boolean(item.incompatible_reason) || !item.url.trim() || queued || downloaded;
             return (
               <div key={`${item.id || item.name}-${item.url}`} className={`${styles.optionCard} ${styles.catalogItemCard}`}>
                 <Text weight="semibold">{item.name}</Text>
@@ -83,6 +86,8 @@ export function RemoteRepositoryPanel(props: Props) {
                 </Text>
                 <Text>{item.desc || "无描述"}</Text>
                 <Text className={styles.tagPill}>{tagLabel(item.tag)}</Text>
+                {downloaded && <Text className={styles.status}>已下载</Text>}
+                {updateAvailable && <Text className={styles.status}>可更新</Text>}
                 {item.min_version && <Text className={styles.empty}>最低版本：{item.min_version}</Text>}
                 {item.incompatible_reason && <Text className={styles.danger}>{item.incompatible_reason}</Text>}
                 {!item.url.trim() && <Text className={styles.danger}>缺少下载地址，无法导入。</Text>}
@@ -90,9 +95,9 @@ export function RemoteRepositoryPanel(props: Props) {
                   <Button
                     appearance="primary"
                     onClick={() => void onImport(item)}
-                    disabled={disabled || importingUrl === item.url}
+                    disabled={disabled}
                   >
-                    {importingUrl === item.url ? "导入中..." : "导入到当前实例"}
+                    {downloaded ? "已下载" : queued ? "已加入下载" : updateAvailable ? "更新组件" : "加入下载"}
                   </Button>
                 </div>
               </div>

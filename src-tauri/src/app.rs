@@ -17,6 +17,7 @@ use tauri_plugin_opener::OpenerExt;
 use zip::ZipArchive;
 
 include!("app_types.rs");
+include!("app_constants.rs");
 include!("app_storage.rs");
 include!("app_pack_config.rs");
 include!("app_pack_values.rs");
@@ -45,6 +46,8 @@ pub fn run() {
             import_instance_configuration,
             import_remote_package,
             list_remote_packages,
+            get_notices,
+            mark_notice_read,
             load_pack_definition,
             get_app_settings,
             save_app_settings_command,

@@ -378,6 +378,18 @@ struct AppSettings {
     registry_url: String,
     #[serde(default)]
     local_repository_path: String,
+    #[serde(default = "default_download_concurrency")]
+    download_concurrency: usize,
+    #[serde(default)]
+    download_limit_kib: u64,
+    #[serde(default)]
+    http_proxy: String,
+    #[serde(default)]
+    last_read_notice_date: String,
+}
+
+fn default_download_concurrency() -> usize {
+    3
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -503,6 +515,7 @@ struct RemotePackageSummary {
     url: String,
     sha256: String,
     min_version: String,
+    local_status: String,
     incompatible_reason: Option<String>,
 }
 
@@ -512,6 +525,27 @@ struct RemotePackageCatalog {
     name: String,
     desc: String,
     packages: Vec<RemotePackageSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NoticeFile {
+    #[serde(rename = "Notice", default)]
+    notices: Vec<NoticeItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct NoticeItem {
+    #[serde(rename = "Date")]
+    date: String,
+    #[serde(rename = "Context")]
+    context: String,
+}
+
+#[derive(Debug, Serialize)]
+struct NoticeCatalog {
+    enabled: bool,
+    notices: Vec<NoticeItem>,
+    latest_unread: Option<NoticeItem>,
 }
 
 #[derive(Debug, Deserialize)]

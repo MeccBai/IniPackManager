@@ -93,6 +93,27 @@ export type ComponentStateMutationResult = {
 export type AppSettings = {
   registry_url: string;
   local_repository_path: string;
+  download_concurrency: number;
+  download_limit_kib: number;
+  http_proxy: string;
+  last_read_notice_date: string;
+};
+
+export type NoticeItem = { date: string; context: string };
+
+export type NoticeCatalog = {
+  enabled: boolean;
+  notices: NoticeItem[];
+  latest_unread: NoticeItem | null;
+};
+
+export type DownloadTask = {
+  id: string;
+  item: RemotePackageSummary;
+  instance_path: string;
+  instance_name: string;
+  status: "queued" | "downloading" | "completed" | "failed";
+  error?: string;
 };
 
 export type RemotePackageSummary = {
@@ -105,6 +126,7 @@ export type RemotePackageSummary = {
   url: string;
   sha256: string;
   min_version: string;
+  local_status: string;
   incompatible_reason: string | null;
 };
 

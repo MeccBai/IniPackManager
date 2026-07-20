@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Button,
@@ -32,6 +32,7 @@ import { InstanceDetailDialog } from "./components/dialogs/InstanceDetailDialog"
 import { SettingsPageLayout } from "./components/dialogs/SettingsPageLayout";
 import { LocalComponentsPanel } from "./components/panels/LocalComponentsPanel";
 import { RemoteRepositoryPanel } from "./components/panels/RemoteRepositoryPanel";
+import { DownloadManagerPanel } from "./components/panels/DownloadManagerPanel";
 import { collectCatalogAuthors, collectCatalogTags, filterCatalogItems } from "./catalogFilters";
 import { tagLabel } from "./tagTranslations";
 import type {
@@ -40,10 +41,13 @@ import type {
   ComponentSetting,
   ComponentState,
   ComponentStateMutationResult,
+  DownloadTask,
   InstanceMutationResult,
   InstanceRecord,
   PackDefinition,
   PackOptionDefinition,
+  NoticeCatalog,
+  NoticeItem,
   PresetSummary,
   RemotePackageCatalog,
   RemotePackageSummary,
@@ -65,11 +69,17 @@ function App() {
   const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
   const [overwriteSummary, setOverwriteSummary] = useState("");
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
+  const [noticeDialogOpen, setNoticeDialogOpen] = useState(false);
+  const [noticesEnabled, setNoticesEnabled] = useState(false);
+  const [notices, setNotices] = useState<NoticeItem[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [registryUrl, setRegistryUrl] = useState("");
   const [localRepositoryPath, setLocalRepositoryPath] = useState("");
+  const [downloadConcurrency, setDownloadConcurrency] = useState(3);
+  const [downloadLimitKib, setDownloadLimitKib] = useState(0);
+  const [httpProxy, setHttpProxy] = useState("");
   const [savingRegistryUrl, setSavingRegistryUrl] = useState(false);
-  const [activeCatalogTab, setActiveCatalogTab] = useState<"local" | "remote">("local");
+  const [activeCatalogTab, setActiveCatalogTab] = useState<"local" | "remote" | "downloads">("local");
   const [remoteQuery, setRemoteQuery] = useState("");
   const [remoteAuthorFilter, setRemoteAuthorFilter] = useState("");
   const [localQuery, setLocalQuery] = useState("");
@@ -80,7 +90,9 @@ function App() {
   const [packLoading, setPackLoading] = useState(false);
   const [packApplying, setPackApplying] = useState(false);
   const [remoteLoading, setRemoteLoading] = useState(false);
-  const [remoteImportingUrl, setRemoteImportingUrl] = useState<string | null>(null);
+  const [downloadTasks, setDownloadTasks] = useState<DownloadTask[]>([]);
+  const runningDownloadIds = useRef(new Set<string>());
+  const componentRegistrationQueue = useRef(Promise.resolve());
   const [packDetailOpen, setPackDetailOpen] = useState(false);
   const [packDefinition, setPackDefinition] = useState<PackDefinition | null>(null);
   const [activeOptionTag, setActiveOptionTag] = useState("");
@@ -144,6 +156,37 @@ function App() {
     const settings = await invoke<AppSettings>("get_app_settings");
     setRegistryUrl(settings.registry_url ?? "");
     setLocalRepositoryPath(settings.local_repository_path ?? "");
+    setDownloadConcurrency(settings.download_concurrency || 3);
+    setDownloadLimitKib(settings.download_limit_kib || 0);
+    setHttpProxy(settings.http_proxy ?? "");
+  };
+
+  const loadNotices = async (openUnread: boolean) => {
+    try {
+      const catalog = await invoke<NoticeCatalog>("get_notices");
+      setNoticesEnabled(catalog.enabled);
+      setNotices(catalog.notices);
+      if (openUnread && catalog.latest_unread) setNoticeDialogOpen(true);
+      return catalog;
+    } catch (error) {
+      setStatus(`公告获取失败: ${String(error)}`);
+      return null;
+    }
+  };
+
+  const markLatestNoticeRead = async () => {
+    const latest = notices[0];
+    if (latest) await invoke("mark_notice_read", { date: latest.date });
+  };
+
+  const viewNotices = async () => {
+    const catalog = await loadNotices(false);
+    try {
+      if (catalog?.notices[0]) await invoke("mark_notice_read", { date: catalog.notices[0].date });
+      setNoticeDialogOpen(true);
+    } catch (error) {
+      openError(`读取公告失败: ${String(error)}`);
+    }
   };
 
   const loadComponents = async (instancePath: string) => {
@@ -160,6 +203,7 @@ function App() {
     const init = async () => {
       try {
         await Promise.all([loadInstances(), loadPresets(), loadAppSettings()]);
+        void loadNotices(true);
       } catch (error) {
         setStatus(`初始化失败: ${String(error)}`);
       } finally {
@@ -408,11 +452,8 @@ function App() {
     return { defaults, settings };
   };
 
-  const registerImportedPack = async (definition: PackDefinition) => {
-    if (!selectedInstance) {
-      openError("请先在左侧选中一个实例");
-      return;
-    }
+  const registerImportedPack = async (definition: PackDefinition, target = selectedInstance, openDetail = true) => {
+    if (!target) throw new Error("请先在左侧选中一个实例");
 
     const { defaults, settings } = buildDefaultSettings(definition);
     const existed = components.some(
@@ -437,20 +478,22 @@ function App() {
 
     const result = await invoke<ComponentStateMutationResult>("save_instance_component_state", {
       input: {
-        instance_path: selectedInstance.path,
+        instance_path: target.path,
         component,
         apply: false,
       },
     });
-    setComponents(result.components);
+    if (selectedInstance?.path === target.path) setComponents(result.components);
     const created = result.components[result.components.length - 1] ?? null;
     if (created) {
       setActiveComponentId(created.id);
     }
-    setPackDefinition(definition);
-    setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
-    setActivePackPage("overview");
-    setEditingSettings(defaults);
+    if (openDetail) {
+      setPackDefinition(definition);
+      setActiveOptionTag(definition.option_groups[0]?.tag ?? "");
+      setActivePackPage("overview");
+      setEditingSettings(defaults);
+    }
     setStatus(`${existed ? "已更新" : "已导入"}组件: ${definition.name} v${definition.version ?? 0}`);
   };
 
@@ -458,10 +501,19 @@ function App() {
     setSavingRegistryUrl(true);
     try {
       const settings = await invoke<AppSettings>("save_app_settings_command", {
-        settings: { registry_url: registryUrl, local_repository_path: localRepositoryPath },
+        settings: {
+          registry_url: registryUrl,
+          local_repository_path: localRepositoryPath,
+          download_concurrency: downloadConcurrency,
+          download_limit_kib: downloadLimitKib,
+          http_proxy: httpProxy,
+        },
       });
       setRegistryUrl(settings.registry_url ?? "");
       setLocalRepositoryPath(settings.local_repository_path ?? "");
+      setDownloadConcurrency(settings.download_concurrency || 3);
+      setDownloadLimitKib(settings.download_limit_kib || 0);
+      setHttpProxy(settings.http_proxy ?? "");
       setStatus("仓库设置已保存");
     } catch (error) {
       openError(String(error));
@@ -527,23 +579,48 @@ function App() {
     }
   };
 
-  const importRemotePackage = async (item: RemotePackageSummary) => {
-    setRemoteImportingUrl(item.url);
+  const queueRemotePackage = (item: RemotePackageSummary) => {
+    if (!selectedInstance) {
+      openError("请先在左侧选中一个实例");
+      return;
+    }
+    setDownloadTasks((current) => current.some((task) => task.item.url === item.url && (task.status === "queued" || task.status === "downloading"))
+      ? current
+      : [...current, { id: crypto.randomUUID(), item, instance_path: selectedInstance.path, instance_name: selectedInstance.name, status: "queued" }]);
+    setActiveCatalogTab("downloads");
+  };
+
+  const runDownloadTask = async (task: DownloadTask) => {
+    if (runningDownloadIds.current.has(task.id)) return;
+    runningDownloadIds.current.add(task.id);
+    setDownloadTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: "downloading", error: undefined } : item));
     try {
       const definition = await invoke<PackDefinition>("import_remote_package", {
         input: {
-          url: item.url,
-          sha256: item.sha256 || null,
+          url: task.item.url,
+          sha256: task.item.sha256 || null,
         },
       });
-      await registerImportedPack(definition);
-      setActiveCatalogTab("local");
+      const target = instances.find((instance) => instance.path === task.instance_path);
+      const registration = componentRegistrationQueue.current.then(() => registerImportedPack(definition, target, false));
+      componentRegistrationQueue.current = registration.catch(() => undefined);
+      await registration;
+      setDownloadTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: "completed" } : item));
+      setStatus(`下载完成并导入：${definition.name}`);
     } catch (error) {
-      openError(String(error));
+      setDownloadTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: "failed", error: String(error) } : item));
     } finally {
-      setRemoteImportingUrl(null);
+      runningDownloadIds.current.delete(task.id);
     }
   };
+
+  useEffect(() => {
+    const available = Math.max(0, downloadConcurrency - runningDownloadIds.current.size);
+    downloadTasks.filter((task) => task.status === "queued").slice(0, available).forEach((task) => void runDownloadTask(task));
+  }, [downloadConcurrency, downloadTasks]);
+
+  const retryDownloadTask = (taskId: string) => setDownloadTasks((current) => current.map((task) => task.id === taskId ? { ...task, status: "queued", error: undefined } : task));
+  const removeDownloadTask = (taskId: string) => setDownloadTasks((current) => current.filter((task) => task.id !== taskId || task.status === "downloading"));
 
   const deleteComponent = async (component: ComponentState) => {
     if (!selectedInstance) {
@@ -851,6 +928,13 @@ function App() {
               >
                 云端仓库
               </Button>
+              <Button
+                className={styles.tabButton}
+                appearance={activeCatalogTab === "downloads" ? "primary" : "secondary"}
+                onClick={() => setActiveCatalogTab("downloads")}
+              >
+                下载管理{downloadTasks.filter((task) => task.status === "queued" || task.status === "downloading").length ? ` (${downloadTasks.filter((task) => task.status === "queued" || task.status === "downloading").length})` : ""}
+              </Button>
             </div>
 
             {activeCatalogTab === "local" ? (
@@ -871,7 +955,7 @@ function App() {
                 onTagFilterChange={setLocalTagFilter}
                 styles={styles}
               />
-            ) : (
+            ) : activeCatalogTab === "remote" ? (
               <RemoteRepositoryPanel
                 game={selectedInstance?.preset_id ?? ""}
                 catalogName={remoteCatalogName}
@@ -884,13 +968,15 @@ function App() {
                 tags={remoteTags}
                 onTagFilterChange={setRemoteTagFilter}
                 packages={filteredRemotePackages}
-                importingUrl={remoteImportingUrl}
+                downloadingUrls={downloadTasks.filter((task) => task.status === "queued" || task.status === "downloading").map((task) => task.item.url)}
                 onQueryChange={setRemoteQuery}
                 onAuthorFilterChange={setRemoteAuthorFilter}
                 onRefresh={() => refreshRemotePackages(true)}
-                onImport={importRemotePackage}
+                onImport={queueRemotePackage}
                 styles={styles}
               />
+            ) : (
+              <DownloadManagerPanel tasks={downloadTasks} onRetry={retryDownloadTask} onRemove={removeDownloadTask} styles={styles} />
             )}
           </div>
         </Card>
@@ -905,9 +991,17 @@ function App() {
         setRegistryUrl={setRegistryUrl}
         localRepositoryPath={localRepositoryPath}
         setLocalRepositoryPath={setLocalRepositoryPath}
+        downloadConcurrency={downloadConcurrency}
+        setDownloadConcurrency={setDownloadConcurrency}
+        downloadLimitKib={downloadLimitKib}
+        setDownloadLimitKib={setDownloadLimitKib}
+        httpProxy={httpProxy}
+        setHttpProxy={setHttpProxy}
         pickLocalRepositoryPath={pickLocalRepositoryPath}
         saveRegistryUrl={saveRegistrySettings}
         savingRegistryUrl={savingRegistryUrl}
+        noticesEnabled={noticesEnabled}
+        onViewNotices={() => void viewNotices()}
         styles={styles}
       />
 
@@ -1089,6 +1183,28 @@ function App() {
               <Button appearance="primary" onClick={() => setErrorDialogOpen(false)}>
                 我知道了
               </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      <Dialog open={noticeDialogOpen} onOpenChange={(_, data) => {
+        setNoticeDialogOpen(data.open);
+        if (!data.open) void markLatestNoticeRead();
+      }}>
+        <DialogSurface className={styles.dialogSurface}>
+          <DialogBody>
+            <DialogTitle>公告</DialogTitle>
+            <DialogContent className={styles.optionsList}>
+              {notices.map((notice) => (
+                <div key={`${notice.date}-${notice.context}`} className={styles.optionCard}>
+                  <Text weight="semibold">{notice.date}</Text>
+                  <Text style={{ whiteSpace: "pre-wrap" }}>{notice.context}</Text>
+                </div>
+              ))}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="primary" onClick={() => { setNoticeDialogOpen(false); void markLatestNoticeRead(); }}>我知道了</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

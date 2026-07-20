@@ -23,14 +23,22 @@ type Props = {
   setRegistryUrl: (value: string) => void;
   localRepositoryPath: string;
   setLocalRepositoryPath: (value: string) => void;
+  downloadConcurrency: number;
+  setDownloadConcurrency: (value: number) => void;
+  downloadLimitKib: number;
+  setDownloadLimitKib: (value: number) => void;
+  httpProxy: string;
+  setHttpProxy: (value: string) => void;
   pickLocalRepositoryPath: () => Promise<void>;
   saveRegistryUrl: () => Promise<void>;
   savingRegistryUrl: boolean;
+  noticesEnabled: boolean;
+  onViewNotices: () => void;
   styles: Record<string, string>;
 };
 
 export function GlobalSettingsDialog(props: Props) {
-  const [page, setPage] = useState<"general" | "repository" | "about">("general");
+  const [page, setPage] = useState<"general" | "repository" | "download" | "about">("general");
   const { styles } = props;
 
   return (
@@ -41,7 +49,7 @@ export function GlobalSettingsDialog(props: Props) {
           <DialogContent className={styles.settingsDialogContent}>
             <SettingsPageLayout
               activePage={page}
-              pages={[{ id: "general", label: "常规" }, { id: "repository", label: "仓库" }, { id: "about", label: "关于" }]}
+              pages={[{ id: "general", label: "常规" }, { id: "repository", label: "仓库" }, { id: "download", label: "下载" }, { id: "about", label: "关于" }]}
               onPageChange={(nextPage) => setPage(nextPage as typeof page)}
               styles={styles}
             >
@@ -89,6 +97,38 @@ export function GlobalSettingsDialog(props: Props) {
                   </>
                 )}
 
+                {page === "download" && (
+                  <>
+                    <div className={styles.settingsPageHeader}>
+                      <Text className={styles.settingsEyebrow}>Downloads</Text>
+                      <Text className={styles.settingsTitle}>下载管理</Text>
+                      <Text className={styles.settingsLead}>设置云端索引和组件包下载的网络策略。</Text>
+                    </div>
+                    <div className={styles.settingsSection}>
+                      <Text weight="semibold">并发与限速</Text>
+                      <div className={styles.fieldGroup}>
+                        <Label htmlFor="download-concurrency">最大并行任务数</Label>
+                        <Input id="download-concurrency" type="number" min={1} max={8} value={String(props.downloadConcurrency)} onChange={(_, data) => props.setDownloadConcurrency(Math.max(1, Number(data.value) || 1))} />
+                        <Text className={styles.fieldHint}>范围为 1 至 8；多个任务会按此数量同时执行。</Text>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <Label htmlFor="download-limit">单任务限速（KiB/s）</Label>
+                        <Input id="download-limit" type="number" min={0} value={String(props.downloadLimitKib)} onChange={(_, data) => props.setDownloadLimitKib(Math.max(0, Number(data.value) || 0))} />
+                        <Text className={styles.fieldHint}>填写 0 表示不限速。限速对每个并行下载任务分别生效。</Text>
+                      </div>
+                    </div>
+                    <div className={styles.settingsSection}>
+                      <Text weight="semibold">HTTP 代理</Text>
+                      <div className={styles.fieldGroup}>
+                        <Label htmlFor="http-proxy">代理地址</Label>
+                        <Input id="http-proxy" value={props.httpProxy} onChange={(_, data) => props.setHttpProxy(data.value)} placeholder="http://127.0.0.1:7890" />
+                        <Text className={styles.fieldHint}>留空直连。索引刷新和组件包下载都会通过该 HTTP 代理访问。</Text>
+                      </div>
+                      <Button appearance="secondary" onClick={() => void props.saveRegistryUrl()} disabled={props.savingRegistryUrl}>{props.savingRegistryUrl ? "保存中..." : "保存下载设置"}</Button>
+                    </div>
+                  </>
+                )}
+
                 {page === "about" && (
                   <>
                     <div className={styles.aboutHero}>
@@ -111,6 +151,7 @@ export function GlobalSettingsDialog(props: Props) {
                       <Text className={styles.fieldHint}>配置：%USERPROFILE%\IniPackManager\config\data</Text>
                       <Text className={styles.fieldHint}>组件仓库：&lt;本地仓库&gt;\components</Text>
                       <Text className={styles.fieldHint}>中央仓库：&lt;本地仓库&gt;\repository</Text>
+                      {props.noticesEnabled && <Button appearance="secondary" onClick={props.onViewNotices}>查看公告</Button>}
                     </div>
                   </>
                 )}

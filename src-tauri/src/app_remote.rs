@@ -1,6 +1,3 @@
-const DEFAULT_REGISTRY_URL: &str = "https://raw.githubusercontent.com/MeccBai/IniPackRepo/master/index.toml";
-const REMOTE_INDEX_CACHE_MAX_AGE_SECS: u64 = 12 * 60 * 60;
-
 #[derive(Debug, Serialize, Deserialize)]
 struct RemoteIndexCache {
     registry_url: String,
@@ -14,6 +11,9 @@ fn load_effective_app_settings() -> Result<AppSettings, String> {
     if settings.registry_url.trim().is_empty() {
         settings.registry_url = DEFAULT_REGISTRY_URL.to_string();
     }
+    if settings.download_concurrency == 0 {
+        settings.download_concurrency = default_download_concurrency();
+    }
     Ok(settings)
 }
 
@@ -21,8 +21,14 @@ fn save_effective_app_settings(settings: AppSettings) -> Result<AppSettings, Str
     let mut next = settings;
     next.registry_url = next.registry_url.trim().to_string();
     next.local_repository_path = next.local_repository_path.trim().to_string();
+    next.http_proxy = next.http_proxy.trim().to_string();
+    next.download_concurrency = next.download_concurrency.clamp(1, 8);
     if next.registry_url.is_empty() {
         next.registry_url = DEFAULT_REGISTRY_URL.to_string();
+    }
+    if !next.http_proxy.is_empty() {
+        reqwest::Proxy::all(&next.http_proxy)
+            .map_err(|err| format!("HTTP 代理地址无效: {err}"))?;
     }
     let path = app_settings_store_path()?;
     save_app_settings(&path, &next)?;
@@ -51,7 +57,15 @@ fn package_incompatible_reason(min_version: &str) -> Option<String> {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    let settings = load_effective_app_settings()?;
+    let mut builder = reqwest::blocking::Client::builder();
+    if !settings.http_proxy.is_empty() {
+        builder = builder.proxy(
+            reqwest::Proxy::all(&settings.http_proxy)
+                .map_err(|err| format!("HTTP 代理地址无效: {err}"))?,
+        );
+    }
+    builder
         .build()
         .map_err(|err| format!("初始化网络客户端失败: {err}"))
 }
@@ -73,6 +87,30 @@ fn current_unix_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+fn notice_date_key(value: &str) -> Option<(u32, u32, u32)> {
+    let mut values = value.trim().split('-').map(|part| part.parse::<u32>().ok());
+    Some((values.next()??, values.next()??, values.next()??)).filter(|_| values.next().is_none())
+}
+
+fn load_notices() -> Result<NoticeCatalog, String> {
+    if NOTICE_URL.trim().is_empty() {
+        return Ok(NoticeCatalog { enabled: false, notices: Vec::new(), latest_unread: None });
+    }
+    let raw = fetch_text(NOTICE_URL)?;
+    let mut notices: Vec<_> = toml::from_str::<NoticeFile>(&raw)
+        .map_err(|err| format!("解析公告失败 {NOTICE_URL}: {err}"))?
+        .notices
+        .into_iter()
+        .filter(|notice| notice_date_key(&notice.date).is_some() && !notice.context.trim().is_empty())
+        .collect();
+    notices.sort_by_key(|notice| std::cmp::Reverse(notice_date_key(&notice.date)));
+    let last_read = load_effective_app_settings()?.last_read_notice_date;
+    let latest_unread = notices.first().filter(|notice| {
+        notice_date_key(&notice.date) > notice_date_key(&last_read)
+    }).cloned();
+    Ok(NoticeCatalog { enabled: true, notices, latest_unread })
 }
 
 fn load_cached_registry_index(index_url: &str, force_refresh: bool) -> Result<String, String> {
@@ -105,16 +143,29 @@ fn load_cached_registry_index(index_url: &str, force_refresh: bool) -> Result<St
 }
 
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let response = http_client()?
+    let limit_kib = load_effective_app_settings()?.download_limit_kib;
+    let mut response = http_client()?
         .get(url)
         .send()
         .map_err(|err| format!("下载失败 {url}: {err}"))?
         .error_for_status()
         .map_err(|err| format!("下载返回错误 {url}: {err}"))?;
-    response
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|err| format!("读取下载内容失败 {url}: {err}"))
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|err| format!("读取下载内容失败 {url}: {err}"))?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        if limit_kib > 0 {
+            let seconds = read as f64 / (limit_kib * 1024) as f64;
+            std::thread::sleep(std::time::Duration::from_secs_f64(seconds));
+        }
+    }
+    Ok(bytes)
 }
 
 fn resolve_remote_url(base_url: &str, relative_or_absolute: &str) -> Result<String, String> {
@@ -276,6 +327,44 @@ fn import_pack_archive(zip_path: &Path) -> Result<PackDefinition, String> {
     build_pack_definition(&repo_target, &parsed_config)
 }
 
+fn normalized_package_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn local_repository_versions() -> (HashMap<String, i64>, HashMap<String, i64>) {
+    let Ok(root) = repository_root_dir() else {
+        return (HashMap::new(), HashMap::new());
+    };
+    let Ok(entries) = fs::read_dir(root) else {
+        return (HashMap::new(), HashMap::new());
+    };
+    let configs: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| parse_pack_config(&path).ok())
+        .collect();
+    let versions_by_id = configs
+        .iter()
+        .filter_map(|config| {
+            let id = config.config.id.trim().to_ascii_lowercase();
+            (!id.is_empty()).then_some((id, config.config.version))
+        })
+        .collect();
+    let versions_by_name = configs
+        .iter()
+        .filter_map(|config| {
+            let name = normalized_package_name(&config.config.name);
+            (!name.is_empty()).then_some((name, config.config.version))
+        })
+        .collect();
+    (versions_by_id, versions_by_name)
+}
+
 fn load_remote_package_catalog(
     registry_url: &str,
     game: &str,
@@ -322,6 +411,7 @@ fn load_remote_package_catalog(
         }
     }
 
+    let (local_versions_by_id, local_versions_by_name) = local_repository_versions();
     Ok(RemotePackageCatalog {
         game: game_text.to_string(),
         name: catalog_name,
@@ -329,6 +419,15 @@ fn load_remote_package_catalog(
         packages: packages
             .into_iter()
             .map(|package| RemotePackageSummary {
+                local_status: match if package.id.trim().is_empty() {
+                    local_versions_by_name.get(&normalized_package_name(&package.name))
+                } else {
+                    local_versions_by_id.get(&package.id.trim().to_ascii_lowercase())
+                } {
+                    Some(local_version) if *local_version >= package.version => "downloaded".to_string(),
+                    Some(_) => "update_available".to_string(),
+                    None => String::new(),
+                },
                 tag: normalize_pack_tag(&package.tag).unwrap_or_default(),
                 id: package.id.trim().to_string(),
                 name: package.name.trim().to_string(),
@@ -359,6 +458,25 @@ fn save_app_settings_command(settings: AppSettings) -> Result<AppSettings, Strin
 #[tauri::command]
 fn list_remote_packages(input: LoadRemotePackagesInput) -> Result<RemotePackageCatalog, String> {
     load_remote_package_catalog(&input.registry_url, &input.game, input.force_refresh)
+}
+
+#[tauri::command]
+fn get_notices() -> Result<NoticeCatalog, String> {
+    load_notices()
+}
+
+#[tauri::command]
+fn mark_notice_read(date: String) -> Result<(), String> {
+    let date = date.trim();
+    let Some(date_key) = notice_date_key(date) else {
+        return Err("公告日期格式无效，需使用 YYYY-M-D".to_string());
+    };
+    let mut settings = load_effective_app_settings()?;
+    if notice_date_key(&settings.last_read_notice_date).is_none_or(|saved| date_key > saved) {
+        settings.last_read_notice_date = date.to_string();
+        save_effective_app_settings(settings)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -10,6 +10,7 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
 };
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 #[cfg(not(windows))]
 use tauri_plugin_opener::OpenerExt;
@@ -34,6 +35,7 @@ pub fn run() {
             list_instances,
             list_presets,
             launch_instance_game,
+            finish_startup,
             list_instance_components,
             preview_add_instance,
             pick_instance_folder,

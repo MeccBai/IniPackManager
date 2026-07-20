@@ -120,6 +120,20 @@ fn ensure_component_can_be_disabled(target: &ComponentState, components: &[Compo
 }
 
 #[tauri::command]
+fn finish_startup(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(splashscreen) = app.get_webview_window("splashscreen") {
+        splashscreen
+            .close()
+            .map_err(|err| format!("关闭启动窗口失败: {err}"))?;
+    }
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "未找到主窗口".to_string())?;
+    main.show().map_err(|err| format!("显示主窗口失败: {err}"))?;
+    main.set_focus().map_err(|err| format!("激活主窗口失败: {err}"))
+}
+
+#[tauri::command]
 fn launch_instance_game(_app: tauri::AppHandle, instance_path: String) -> Result<(), String> {
     let instance_dir = validate_instance_game_dir(Path::new(instance_path.trim()))?;
     let preset_id = instance_preset_id_for_path(instance_path.trim())?;

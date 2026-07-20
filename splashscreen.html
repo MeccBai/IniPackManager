@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>INI Pack Manager</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: #edf8f5;
+        font-family: "Open Sans", "Microsoft YaHei UI", sans-serif;
+        background:
+          radial-gradient(circle at 50% 10%, rgba(71, 198, 167, 0.38), transparent 48%),
+          linear-gradient(145deg, #0b2f43, #125c6d 55%, #147d75);
+      }
+      main { display: grid; justify-items: center; gap: 16px; }
+      .mark {
+        width: 106px;
+        height: 106px;
+        display: grid;
+        place-items: center;
+        border-radius: 32px;
+        background: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.25);
+        animation: breathe 1.4s ease-in-out infinite;
+      }
+      .mark img { width: 76px; height: 76px; animation: orbit 2.8s linear infinite; }
+      h1 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
+      p { margin: 0; color: rgba(237, 248, 245, 0.74); font-size: 13px; }
+      .loader { display: flex; gap: 6px; }
+      .loader i { width: 6px; height: 6px; border-radius: 50%; background: #b5f3df; animation: pulse 0.8s ease-in-out infinite alternate; }
+      .loader i:nth-child(2) { animation-delay: 0.15s; }
+      .loader i:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes breathe { 50% { transform: scale(1.06); box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34); } }
+      @keyframes orbit { to { transform: rotate(360deg); } }
+      @keyframes pulse { to { opacity: 0.28; transform: translateY(-4px); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark"><img src="/app-icon.png" alt="INI Pack Manager" /></div>
+      <h1>INI Pack Manager</h1>
+      <p>正在准备组件工作区</p>
+      <div class="loader" aria-label="加载中"><i></i><i></i><i></i></div>
+    </main>
+  </body>
+</html>
